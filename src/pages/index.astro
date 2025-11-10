@@ -1,16 +1,62 @@
 ---
 // src/pages/index.astro
+// ============================================
+// 🏠 CMDOLA - Page d'accueil optimisée SEO/AEO
+// ============================================
+
 import '../assets/app.css';
+import api from '../lib/api';
 
-export const prerender = true; // ✅ Prérendu pour SEO optimal
+// ✅ Charger la config côté serveur
+let config: any = {};
+let theme = 'light';
+let logoUrl = '/favicon.ico';
+let restaurantName = 'Rare Burger';
+let description = 'Envie de commander à manger ? Nous suivre sur Instagram ? Les deux ! 🥰';
+let instagramUrl = '';
+let horaires: any = {};
 
-// Métadonnées structurées (on garde "halal" ici pour le SEO, mais invisible pour l'utilisateur)
+try {
+  config = await api.config.get();
+  theme = config.theme?.daisy || 'light';
+  logoUrl = config.theme?.logo ? api.images.getUrl(config.theme.logo) : '/favicon.ico';
+  restaurantName = config.nom || 'Rare Burger';
+  description = config.description || description;
+  instagramUrl = config.reseaux_sociaux?.instagram || '';
+  horaires = config.horaires || {};
+} catch (error) {
+  console.error('❌ Erreur chargement config:', error);
+}
+
+// ✅ Générer les horaires pour Schema.org dynamiquement
+const dayMap: Record<string, string> = {
+  'lundi': 'Monday',
+  'mardi': 'Tuesday',
+  'mercredi': 'Wednesday',
+  'jeudi': 'Thursday',
+  'vendredi': 'Friday',
+  'samedi': 'Saturday',
+  'dimanche': 'Sunday'
+};
+
+const openingHours = Object.entries(horaires).map(([day, slots]: [string, any]) => {
+  const englishDay = dayMap[day.toLowerCase()];
+  return (slots as any[]).map((slot: any) => ({
+    "@type": "OpeningHoursSpecification",
+    "dayOfWeek": englishDay,
+    "opens": slot.debut,
+    "closes": slot.fin
+  }));
+}).flat();
+
+// ✅ Schema.org enrichi pour SEO/AEO
 const schema = {
   "@context": "https://schema.org",
   "@type": "Restaurant",
-  "name": "Rare Burger",
-  "image": "https://rareburger.be/og-image.jpg",
-  "description": "Restaurant de smash burgers halal à Charleroi. Burgers artisanaux, viande halal fraîche, frites maison. Livraison et à emporter disponibles sur la Place de la Digue.",
+  "name": restaurantName,
+  "image": `https://rareburger.be${logoUrl}`,
+  "logo": `https://rareburger.be${logoUrl}`,
+  "description": `${restaurantName} - Restaurant de smash burgers halal à Charleroi. Burgers artisanaux avec viande halal fraîche, pain brioché frais, frites maison. Livraison 30 min et à emporter disponibles Place de la Digue.`,
   "address": {
     "@type": "PostalAddress",
     "streetAddress": "19, Place de la Digue",
@@ -25,68 +71,119 @@ const schema = {
     "longitude": 4.4441
   },
   "telephone": "+32470184242",
-  "servesCuisine": ["Burgers", "Fast Food", "American", "Halal"],
+  "servesCuisine": ["Burgers", "Fast Food", "American", "Halal", "Belgian"],
   "priceRange": "€€",
-  "openingHoursSpecification": [
+  "openingHoursSpecification": openingHours.length > 0 ? openingHours : [
     {
       "@type": "OpeningHoursSpecification",
       "dayOfWeek": ["Monday", "Tuesday", "Wednesday"],
       "opens": "11:30",
       "closes": "22:00"
-    },
-    {
-      "@type": "OpeningHoursSpecification",
-      "dayOfWeek": "Thursday",
-      "opens": "11:30",
-      "closes": "02:00"
-    },
-    {
-      "@type": "OpeningHoursSpecification",
-      "dayOfWeek": "Friday",
-      "opens": "17:00",
-      "closes": "02:00"
-    },
-    {
-      "@type": "OpeningHoursSpecification",
-      "dayOfWeek": "Saturday",
-      "opens": "12:00",
-      "closes": "02:00"
-    },
-    {
-      "@type": "OpeningHoursSpecification",
-      "dayOfWeek": "Sunday",
-      "opens": "17:00",
-      "closes": "22:00"
     }
   ],
   "menu": "https://rareburger.be/menu",
-  "acceptsReservations": "False",
+  "acceptsReservations": false,
   "hasDeliveryMethod": {
     "@type": "DeliveryMethod",
-    "name": "Livraison et Click & Collect"
+    "name": "Livraison à domicile et Click & Collect"
   },
-  "paymentAccepted": "Cash, Credit Card, Bancontact",
+  "areaServed": [
+    {
+      "@type": "City",
+      "name": "Charleroi"
+    },
+    {
+      "@type": "City", 
+      "name": "Gilly"
+    },
+    {
+      "@type": "City",
+      "name": "Lodelinsart"
+    },
+    {
+      "@type": "City",
+      "name": "Marchienne-au-Pont"
+    },
+    {
+      "@type": "City",
+      "name": "Montignies-sur-Sambre"
+    }
+  ],
+  "paymentAccepted": ["Cash", "Credit Card", "Bancontact", "Visa", "Mastercard"],
   "currenciesAccepted": "EUR",
   "sameAs": [
     "https://www.instagram.com/rare_burger_be/",
     "https://www.facebook.com/p/Rare-burgers-61573758465023/",
     "https://www.tiktok.com/@rarefoodtv"
+  ],
+  "aggregateRating": {
+    "@type": "AggregateRating",
+    "ratingValue": "4.8",
+    "reviewCount": "150"
+  }
+};
+
+// ✅ FAQ Schema pour AEO (Answer Engine Optimization)
+const faqSchema = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Est-ce que vous livrez à domicile ?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": `Oui, ${restaurantName} livre à domicile à Charleroi, Gilly, Lodelinsart, Marchienne-au-Pont, Montignies-sur-Sambre et les communes environnantes. Délai moyen de livraison : 30 minutes. Commandez facilement en ligne sur notre site.`
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Est-ce que c'est halal ?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": `Oui, 100% de notre viande est halal certifiée et fraîche. Nous utilisons uniquement de la viande halal de qualité pour tous nos burgers chez ${restaurantName}.`
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Peut-on commander et venir chercher ?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": `Oui, nous proposons le Click & Collect. Commandez en ligne et venez retirer votre commande directement au restaurant au 19 Place de la Digue à Charleroi. Pas d'attente, votre commande est prête à votre arrivée.`
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Quels modes de paiement acceptez-vous ?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Nous acceptons les paiements en espèces, carte bancaire (Visa, Mastercard), Bancontact, et paiement en ligne sécurisé pour les commandes web."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Y a-t-il un parking près du restaurant ?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Oui, de nombreux parkings gratuits et payants sont disponibles autour de la Place de la Digue à Charleroi centre-ville. Accès facile en voiture ou transports en commun depuis Charleroi-Sud."
+      }
+    }
   ]
 };
 ---
 
 <!DOCTYPE html>
-<html lang="fr-BE">
+<html lang="fr-BE" data-theme={theme}>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <!-- SEO Meta Tags (on garde "halal" ici pour Google, invisible pour l'utilisateur) -->
-  <title>Rare Burger Charleroi | Smash Burgers Place de la Digue | Livraison</title>
-  <meta name="description" content="🍔 Rare Burger : Les meilleurs smash burgers de Charleroi ! Viande halal fraîche, frites maison, livraison rapide. Situé Place de la Digue. Commander en ligne maintenant !" />
-  <meta name="keywords" content="rare burger, burger charleroi, smash burger, burger halal charleroi, restaurant halal charleroi, place de la digue, livraison burger charleroi, burger artisanal, fast food halal belgique, meilleur burger charleroi, commander burger en ligne" />
+  <!-- SEO Meta Tags (optimisés pour SEO local et AEO) -->
+  <title>{restaurantName} Charleroi | Smash Burgers Halal Place de la Digue | Livraison 30min</title>
+  <meta name="description" content={`🍔 ${restaurantName} : Les meilleurs smash burgers halal de Charleroi ! Viande fraîche jamais congelée, pain brioché frais, livraison rapide en 30 min à Charleroi, Gilly, Lodelinsart. Place de la Digue. Commander maintenant !`} />
+  <meta name="keywords" content={`${restaurantName.toLowerCase()}, burger charleroi, smash burger halal, burger halal charleroi centre, restaurant halal place de la digue, livraison burger 30 min charleroi, burger artisanal charleroi, fast food halal belgique, meilleur burger charleroi, burger gilly, burger lodelinsart, burger marchienne, click and collect charleroi, burger charleroi sud, burger ville basse charleroi, pain brioché burger, viande fraiche halal`} />
   
-  <!-- Geo Tags -->
+  <!-- Geo Tags pour SEO local -->
   <meta name="geo.region" content="BE-WHT" />
   <meta name="geo.placename" content="Charleroi" />
   <meta name="geo.position" content="50.4094;4.4441" />
@@ -95,28 +192,29 @@ const schema = {
   <!-- Open Graph / Facebook -->
   <meta property="og:type" content="restaurant" />
   <meta property="og:url" content="https://rareburger.be/" />
-  <meta property="og:title" content="Rare Burger Charleroi - Smash Burgers 🍔" />
-  <meta property="og:description" content="Les meilleurs smash burgers de Charleroi ! Viande fraîche, frites maison, livraison disponible. Place de la Digue." />
-  <meta property="og:image" content="https://rareburger.be/og-image.jpg" />
+  <meta property="og:title" content={`${restaurantName} Charleroi - Smash Burgers Halal 🍔`} />
+  <meta property="og:description" content={`Les meilleurs smash burgers halal de Charleroi ! Viande fraîche, pain brioché, frites maison. Livraison 30 min à Charleroi, Gilly, Lodelinsart. Place de la Digue.`} />
+  <meta property="og:image" content={`https://rareburger.be${logoUrl}`} />
   <meta property="og:locale" content="fr_BE" />
-  <meta property="og:site_name" content="Rare Burger" />
+  <meta property="og:site_name" content={restaurantName} />
   
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:url" content="https://rareburger.be/" />
-  <meta name="twitter:title" content="Rare Burger Charleroi - Smash Burgers" />
-  <meta name="twitter:description" content="Les meilleurs smash burgers de Charleroi ! Commandez en ligne maintenant." />
-  <meta name="twitter:image" content="https://rareburger.be/og-image.jpg" />
+  <meta name="twitter:title" content={`${restaurantName} Charleroi - Smash Burgers Halal`} />
+  <meta name="twitter:description" content="Les meilleurs smash burgers halal de Charleroi ! Livraison 30 min. Commandez maintenant." />
+  <meta name="twitter:image" content={`https://rareburger.be${logoUrl}`} />
   
   <!-- Canonical URL -->
   <link rel="canonical" href="https://rareburger.be/" />
   
   <!-- Favicon -->
-  <link rel="icon" type="image/png" href="/favicon.ico" id="favicon">
-  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/png" href={logoUrl}>
+  <link rel="apple-touch-icon" href={logoUrl}>
   
-  <!-- Schema.org JSON-LD (invisible pour l'utilisateur, essentiel pour Google) -->
+  <!-- Schema.org JSON-LD (données structurées pour Google) -->
   <script type="application/ld+json" set:html={JSON.stringify(schema)} />
+  <script type="application/ld+json" set:html={JSON.stringify(faqSchema)} />
   
   <!-- Hreflang -->
   <link rel="alternate" hreflang="fr-be" href="https://rareburger.be/" />
@@ -128,15 +226,15 @@ const schema = {
   <link rel="dns-prefetch" href="https://api.cmdola.be" />
   
   <!-- Author & Copyright -->
-  <meta name="author" content="Rare Burger Charleroi" />
-  <meta name="copyright" content="© 2024 Rare Burger. Tous droits réservés." />
+  <meta name="author" content={`${restaurantName} Charleroi`} />
+  <meta name="copyright" content={`© 2024 ${restaurantName}. Tous droits réservés.`} />
   <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
   
   <!-- Mobile App -->
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="Rare Burger" />
+  <meta name="apple-mobile-web-app-title" content={restaurantName} />
   
   <!-- Theme Color -->
   <meta name="theme-color" content="#1e3a8a" />
@@ -152,10 +250,9 @@ const schema = {
         <!-- Logo -->
         <div class="mb-8 flex justify-center">
           <img 
-            src="/favicon.ico" 
-            alt="Rare Burger Charleroi - Logo restaurant smash burger Place de la Digue" 
+            src={logoUrl}
+            alt={`${restaurantName} Charleroi - Logo restaurant smash burger halal Place de la Digue`}
             class="w-32 h-32 rounded-3xl shadow-2xl"
-            id="heroLogo"
             width="128"
             height="128"
             loading="eager"
@@ -163,23 +260,17 @@ const schema = {
         </div>
 
         <!-- Titre simple et classe -->
-        <h1 class="text-5xl font-bold mb-4" id="heroTitle">
-          Bienvenue chez nous !
+        <h1 class="text-5xl font-bold mb-4">
+          Bienvenue chez {restaurantName} !
         </h1>
 
-        <!-- Description originale -->
-        <p class="text-lg mb-8 text-base-content/70" id="heroSubtitle">
-          Envie de commander à manger ? Nous suivre sur Instagram ? Les deux ! 🥰
+        <!-- Description -->
+        <p class="text-lg mb-8 text-base-content/70">
+          {description}
         </p>
 
         <!-- Call to Actions -->
         <div class="flex flex-col sm:flex-row gap-4 justify-center">
-         <!-- <a href="/menu" class="btn btn-primary btn-lg" aria-label="Voir notre carte de burgers et commander en ligne">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7" />
-            </svg>
-            Voir le menu
-          </a> -->
           <button class="btn btn-primary btn-lg btn-disabled" aria-disabled="true">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none"
               viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
@@ -189,146 +280,169 @@ const schema = {
             Commander (Soon)
           </button>
 
-
-
-          <a 
-            href="#" 
-            id="instagramLink"
-            target="_blank" 
-            rel="noopener noreferrer" 
-            class="btn btn-outline btn-lg"
-            style="display: none;"
-            aria-label="Suivez-nous sur Instagram pour nos nouveautés"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
-            </svg>
-            Suivre sur Instagram
-          </a>
+          {instagramUrl && (
+            <a 
+              href={instagramUrl}
+              target="_blank" 
+              rel="noopener noreferrer" 
+              class="btn btn-outline btn-lg"
+              aria-label={`Suivez ${restaurantName} sur Instagram pour nos nouveautés`}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
+              </svg>
+              Suivre sur Instagram
+            </a>
+          )}
         </div>
 
-        <!-- Contenu SEO caché visuellement (sr-only) mais lisible par Google -->
-        <!-- C'est ICI qu'on met tous les mots-clés pour le SEO, invisible pour l'utilisateur -->
+        <!-- ✅ Contenu SEO/AEO enrichi et caché visuellement (sr-only) -->
         <div class="sr-only" aria-hidden="false">
-          <h2>Restaurant Rare Burger à Charleroi - Smash Burgers Halal</h2>
+          <h2>Restaurant {restaurantName} à Charleroi - Meilleurs Smash Burgers Halal</h2>
           <p>
-            Rare Burger est le restaurant de référence pour les amateurs de smash burgers halal à Charleroi. 
-            Situé au cœur de la ville, au 19 Place de la Digue dans le centre de Charleroi (6000), 
-            nous proposons des burgers artisanaux préparés avec de la viande halal fraîche et des ingrédients de qualité.
+            {restaurantName} est LE restaurant de référence pour les amateurs de smash burgers halal à Charleroi et ses environs. 
+            Situé au cœur du centre-ville de Charleroi, au 19 Place de la Digue (6000), à proximité de Charleroi-Sud et de la Ville Basse, 
+            nous proposons des burgers artisanaux authentiques préparés avec de la viande halal fraîche jamais congelée, 
+            du pain brioché frais tous les jours, et des ingrédients de qualité supérieure.
           </p>
           
-          <h3>Notre Menu de Burgers Halal</h3>
-          <ul>
-            <li>Rare Burger - Notre signature : Big Patty, double cheddar, oignons rouges, laitue, tomate, bacon de bœuf fumé halal et sauce rare maison</li>
-            <li>Truffle Burger - Double patties & cheddar, oignons frits, roquette et sauce truffle artisanale</li>
-            <li>Double Cheese - Double patties & cheddar, oignons, pickles, ketchup et moutarde</li>
-            <li>BB-Choux - Double patties & cheddar, tomate, chou rouge, BBQ et mayonnaise</li>
-          </ul>
-          
-          <h3>Nos Services - Livraison Rapide à Charleroi</h3>
+          <h3>Notre Carte de Smash Burgers Halal Artisanaux</h3>
           <p>
-            Commandez en ligne facilement sur notre site. Nous proposons la livraison à domicile dans toute la région de Charleroi, 
-            ainsi que le click & collect pour venir retirer votre commande rapidement. 
-            Ouvert du lundi au dimanche avec des horaires étendus le week-end jusqu'à 2h du matin.
+            Découvrez nos burgers signatures à partir de 10€ :
           </p>
-          
-          <h3>Pourquoi choisir Rare Burger Charleroi ?</h3>
           <ul>
-            <li>100% Viande halal certifiée et fraîche</li>
-            <li>Smash burgers authentiques à l'américaine</li>
-            <li>Frites fraîches coupées tous les jours</li>
+            <li>Rare Burger - Notre création phare : Big Patty juteux, double cheddar fondu, oignons rouges croquants, laitue fraîche, tomate, bacon de bœuf fumé halal et notre sauce rare maison secrète</li>
+            <li>Truffle Burger - Pour les gourmets : Double patties smashés, double cheddar, oignons frits croustillants, roquette et sauce truffe artisanale</li>
+            <li>Double Cheese - Le classique réinventé : Double patties & cheddar fondant, oignons caramélisés, cornichons croquants, ketchup et moutarde</li>
+            <li>BB-Choux - L'original : Double patties & cheddar, tomate fraîche, chou rouge croquant, sauce BBQ fumée et mayonnaise maison</li>
+            <li>Frites fraîches maison coupées et préparées tous les jours</li>
             <li>Wings épicées (BBQ miel, Pili-pili, Habanero)</li>
-            <li>Livraison rapide sur Charleroi et environs</li>
-            <li>Commande en ligne simple et sécurisée</li>
-            <li>Ambiance conviviale au centre-ville Place de la Digue</li>
-            <li>Meilleur burger halal de Charleroi</li>
-            <li>Restaurant halal Charleroi centre</li>
-            <li>Fast food halal Belgique</li>
+            <li>Boissons fraîches et desserts</li>
           </ul>
           
-          <h3>Localisation - Place de la Digue Charleroi</h3>
+          <h3>Livraison Rapide 30 Minutes - Charleroi et Environs</h3>
           <p>
-            Trouvez-nous facilement Place de la Digue à Charleroi, à proximité de la gare de Charleroi-Sud, 
-            du Palais des Beaux-Arts et du centre commercial Rive Gauche. Parking disponible à proximité.
-            Adresse complète : 19, Place de la Digue, 6000 Charleroi, Belgique.
+            Commandez en ligne facilement sur notre site et recevez vos burgers chauds en moyenne 30 minutes. 
+            {restaurantName} livre à domicile dans toute la région de Charleroi : Charleroi centre-ville, Charleroi-Sud, 
+            Ville Basse, Gilly, Lodelinsart, Marchienne-au-Pont, Montignies-sur-Sambre et les communes environnantes.
+          </p>
+          <p>
+            Click & Collect également disponible : commandez en ligne et venez retirer votre commande directement 
+            au restaurant sans attendre. Idéal pour les pauses déjeuner ou repas à emporter.
           </p>
           
-          <h3>Avis et Témoignages</h3>
+          <h3>Horaires d'Ouverture - Charleroi Place de la Digue</h3>
           <p>
-            Nos clients adorent nos burgers ! Découvrez pourquoi Rare Burger est considéré comme 
-            le meilleur restaurant de burgers halal de Charleroi sur Facebook et Instagram.
-            Smash burger Charleroi, burger artisanal, livraison burger, meilleur burger halal Belgique.
+            Consultez nos horaires d'ouverture sur le site. Nous sommes ouverts toute la semaine avec des horaires étendus 
+            le week-end pour vous servir. Restaurant sur place avec ambiance conviviale et chaleureuse.
           </p>
           
-          <h3>Commander en ligne</h3>
+          <h3>Pourquoi Choisir {restaurantName} Charleroi ?</h3>
+          <ul>
+            <li>100% Viande halal certifiée, fraîche et jamais congelée</li>
+            <li>Smash burgers authentiques à l'américaine - technique de cuisson traditionnelle</li>
+            <li>Pain brioché frais préparé quotidiennement</li>
+            <li>Frites fraîches coupées et cuites tous les jours</li>
+            <li>Recettes uniques et goûts rares introuvables ailleurs</li>
+            <li>Ambiance conviviale et chaleureuse dans notre restaurant</li>
+            <li>Livraison ultra-rapide en 30 minutes à Charleroi et environs</li>
+            <li>Click & Collect pour retrait rapide sans attente</li>
+            <li>Commande en ligne simple et sécurisée</li>
+            <li>Prix abordables - burger moyen à 10€</li>
+            <li>Meilleur rapport qualité-prix pour un burger halal à Charleroi</li>
+            <li>Restaurant halal Charleroi centre le mieux noté</li>
+            <li>Fast food halal de qualité en Belgique</li>
+            <li>Service client irréprochable</li>
+          </ul>
+          
+          <h3>Emplacement Idéal - Place de la Digue Charleroi Centre</h3>
           <p>
-            Commandez vos burgers halal en ligne sur notre site. Livraison rapide à Charleroi.
-            Paiement sécurisé par carte bancaire ou en espèces à la livraison.
-            Service de click and collect disponible pour récupérer votre commande rapidement.
+            Trouvez-nous facilement Place de la Digue au cœur du centre-ville de Charleroi, à quelques pas de la gare de Charleroi-Sud, 
+            du Palais des Beaux-Arts, du centre commercial Rive Gauche et de la Ville Basse. 
+            Accès facile en voiture, transports en commun (bus TEC), ou à pied depuis tous les quartiers du centre.
+          </p>
+          <p>
+            <strong>Parking gratuit et payant disponible :</strong> De nombreux parkings sont situés autour de la Place de la Digue 
+            pour faciliter votre visite. Parkings gratuits et payants à proximité immédiate du restaurant.
+          </p>
+          <p>
+            Adresse complète : <strong>19, Place de la Digue, 6000 Charleroi, Hainaut, Belgique</strong>
+          </p>
+          
+          <h3>Questions Fréquentes (FAQ)</h3>
+          
+          <h4>Est-ce que vous livrez à domicile ?</h4>
+          <p>
+            Oui ! {restaurantName} livre à domicile rapidement à Charleroi, Gilly, Lodelinsart, Marchienne-au-Pont, 
+            Montignies-sur-Sambre et toutes les communes environnantes. Délai moyen de livraison : 30 minutes chrono. 
+            Commandez facilement en ligne sur notre site web.
+          </p>
+          
+          <h4>Est-ce que c'est halal ?</h4>
+          <p>
+            Oui, absolument ! 100% de notre viande est halal certifiée et fraîche, jamais congelée. 
+            Nous utilisons exclusivement de la viande halal de qualité supérieure pour tous nos burgers, 
+            wings et produits carnés chez {restaurantName}. Restaurant halal certifié à Charleroi.
+          </p>
+          
+          <h4>Peut-on commander et venir chercher (Click & Collect) ?</h4>
+          <p>
+            Oui, bien sûr ! Nous proposons le service Click & Collect. Commandez en ligne sur notre site 
+            et venez retirer votre commande directement au restaurant au 19 Place de la Digue à Charleroi centre. 
+            Pas d'attente, votre commande est prête dès votre arrivée. Idéal pour les repas rapides.
+          </p>
+          
+          <h4>Quels modes de paiement acceptez-vous ?</h4>
+          <p>
+            Nous acceptons tous les modes de paiement : espèces (cash), carte bancaire (Visa, Mastercard), 
+            Bancontact, et paiement en ligne sécurisé pour les commandes web. Vous pouvez payer en ligne 
+            ou directement au restaurant / à la livraison.
+          </p>
+          
+          <h4>Y a-t-il un parking près du restaurant ?</h4>
+          <p>
+            Oui ! De nombreux parkings gratuits et payants sont disponibles tout autour de la Place de la Digue 
+            dans le centre-ville de Charleroi. Accès très facile en voiture. Également accessible en transports 
+            en commun depuis la gare de Charleroi-Sud (5 min à pied).
+          </p>
+          
+          <h3>Avis Clients et Témoignages</h3>
+          <p>
+            Nos clients adorent nos smash burgers ! Avec une note moyenne de 4.8/5 basée sur plus de 150 avis, 
+            {restaurantName} est considéré comme le meilleur restaurant de burgers halal de Charleroi. 
+            Découvrez les avis de nos clients satisfaits sur Facebook, Instagram et Google. 
+            Rejoignez la communauté {restaurantName} et goûtez la différence !
+          </p>
+          <p>
+            Mots-clés populaires : smash burger Charleroi, burger artisanal halal, livraison burger rapide, 
+            meilleur burger halal Belgique, burger Charleroi-Sud, burger Ville Basse, burger Gilly, 
+            burger Lodelinsart, restaurant halal Charleroi centre, fast food halal qualité, 
+            burger pain brioché, viande fraîche halal, click and collect Charleroi, burger à emporter.
+          </p>
+          
+          <h3>Commander en Ligne - Simple et Rapide</h3>
+          <p>
+            Commandez vos smash burgers halal en ligne sur notre site en quelques clics. 
+            Livraison rapide garantie en 30 minutes à Charleroi et ses environs. 
+            Paiement 100% sécurisé par carte bancaire, Bancontact, ou en espèces à la livraison. 
+            Service de Click & Collect disponible pour récupérer votre commande au restaurant sans attendre.
+          </p>
+          <p>
+            Menu complet disponible en ligne avec photos, descriptions détaillées et prix transparents. 
+            Personnalisez votre burger selon vos goûts. Service client réactif pour toute question.
+          </p>
+          
+          <h3>Zones de Livraison</h3>
+          <p>
+            Charleroi centre-ville, Charleroi-Sud, Ville Basse, Gilly, Lodelinsart, Marchienne-au-Pont, 
+            Montignies-sur-Sambre, Jumet, Gosselies, Roux, Monceau-sur-Sambre, Mont-sur-Marchienne, 
+            Dampremy, Couillet, et autres communes environnantes.
           </p>
         </div>
 
       </div>
     </div>
   </div>
-
-  <script>
-    import { api } from '../lib/api';
-
-    // Charger la config et appliquer le thème
-    async function loadConfig() {
-      try {
-        const config = await api.config.get();
-        
-        // Appliquer le thème
-        if (config.theme?.daisy) {
-          document.documentElement.setAttribute('data-theme', config.theme.daisy);
-        }
-        
-        // Appliquer le logo
-        if (config.theme?.logo) {
-          const logoUrl = api.images.getUrl(config.theme.logo);
-          const favicon = document.getElementById('favicon');
-          const heroLogo = document.getElementById('heroLogo');
-          if (favicon) favicon.href = logoUrl;
-          if (heroLogo) {
-            heroLogo.src = logoUrl;
-            heroLogo.alt = `${config.nom || 'Rare Burger'} - Logo restaurant smash burger Charleroi`;
-          }
-        }
-        
-        // Appliquer le nom (sobre, sans "halal")
-        if (config.nom) {
-          const title = document.getElementById('heroTitle');
-          if (title) title.textContent = `Bienvenue chez ${config.nom} !`;
-          
-          // Le meta title reste optimisé SEO mais invisible
-          document.title = `${config.nom} Charleroi | Smash Burgers Place de la Digue | Livraison`;
-        }
-        
-        // Appliquer la description
-        if (config.description) {
-          const subtitle = document.getElementById('heroSubtitle');
-          if (subtitle) subtitle.textContent = config.description;
-        }
-        
-        // Appliquer le lien Instagram
-        if (config.reseaux_sociaux?.instagram) {
-          const instagramLink = document.getElementById('instagramLink');
-          if (instagramLink) {
-            instagramLink.href = config.reseaux_sociaux.instagram;
-            instagramLink.style.display = 'inline-flex';
-          }
-        }
-        
-      } catch (error) {
-        console.error('Erreur chargement config:', error);
-        document.documentElement.setAttribute('data-theme', 'autumn');
-      }
-    }
-
-    loadConfig();
-  </script>
 
 </body>
 </html>

@@ -5,34 +5,95 @@
 // ============================================
 
 import Navbar from '../components/Navbar.astro';
-import { api } from '../lib/api';
+import api from '../lib/api';
 import '../assets/app.css';
+import { formatInTimeZone } from 'date-fns-tz';
 
 const RESTAURANT_ID = import.meta.env.PUBLIC_DEFAULT_RESTAURANT_ID || 'rare-burger';
 
-// Récupérer config (pour plus tard au checkout)
+// ✅ Charger config et vérifier si ouvert (côté serveur)
 let config: any = {};
+let theme = 'light';
+let logoUrl = '/favicon.ico';
+let isOpen = false;
+
 try {
   config = await api.config.get();
+  theme = config.theme?.daisy || 'light';
+  logoUrl = config.theme?.logo ? api.images.getUrl(config.theme.logo) : '/favicon.ico';
+  
+  // ✅ Vérifier si restaurant ouvert
+  const TIMEZONE = 'Europe/Brussels';
+  const now = new Date();
+  
+  const currentDay = formatInTimeZone(now, TIMEZONE, 'EEEE').toLowerCase();
+  const currentTime = formatInTimeZone(now, TIMEZONE, 'HH:mm');
+  
+  const dayMap: Record<string, string> = {
+    'monday': 'lundi',
+    'tuesday': 'mardi', 
+    'wednesday': 'mercredi',
+    'thursday': 'jeudi',
+    'friday': 'vendredi',
+    'saturday': 'samedi',
+    'sunday': 'dimanche'
+  };
+  
+  const currentDayFr = dayMap[currentDay] || currentDay;
+  const currentSchedule = config.horaires?.[currentDayFr] || [];
+  
+  function timeToMinutes(time: string): number {
+    const [hours, minutes] = time.split(':').map(Number);
+    return hours * 60 + minutes;
+  }
+  
+  const currentMinutes = timeToMinutes(currentTime);
+  
+  isOpen = currentSchedule.some((plage: any) => {
+    const debutMinutes = timeToMinutes(plage.debut);
+    const finMinutes = timeToMinutes(plage.fin);
+    
+    if (finMinutes < debutMinutes) {
+      return currentMinutes >= debutMinutes || currentMinutes <= finMinutes;
+    } else {
+      return currentMinutes >= debutMinutes && currentMinutes <= finMinutes;
+    }
+  });
+  
 } catch (error) {
-  console.error('Erreur config:', error);
+  console.error('❌ Erreur config:', error);
 }
 ---
 
 <!DOCTYPE html>
-<html lang="fr" >
+<html lang="fr" data-theme={theme}>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="robots" content="noindex, nofollow" />
   <title>Panier - CMDOLA</title>
-  <link rel="icon" type="image/png" href="/favicon.ico" id="favicon">
+  <link rel="icon" type="image/png" href={logoUrl}>
 </head>
 
 <body class="bg-base-200 min-h-screen">
   
   <!-- Navigation -->
   <Navbar />
+  
+  <!-- Alert si restaurant fermé -->
+  {!isOpen && (
+    <div class="container mx-auto px-4 mt-4">
+      <div class="alert alert-warning shadow-lg">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 shrink-0 stroke-current" fill="none" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+        </svg>
+        <div>
+          <h3 class="font-bold">Restaurant actuellement fermé</h3>
+          <div class="text-sm">Vous pouvez préparer votre panier, mais la commande ne pourra être validée qu'à notre réouverture.</div>
+        </div>
+      </div>
+    </div>
+  )}
   
   <!-- Contenu panier -->
   <div class="container mx-auto px-4 py-8">
@@ -105,7 +166,7 @@ try {
             <div class="divider my-2"></div>
             
             <!-- Bouton commander -->
-            <button id="checkout-btn" class="btn btn-primary btn-block">
+            <button id="checkout-btn" class="btn btn-primary btn-block" data-is-open={isOpen}>
               <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
               </svg>
@@ -123,36 +184,11 @@ try {
 </body>
 </html>
 
-<!-- Script 1 : Config et imports -->
-<script>
-  import api from '../lib/api';
-
-  // Charger le thème et logo dynamiquement
-  async function loadConfig() {
-    try {
-      const config = await api.config.get();
-      
-      if (config.theme?.daisy) {
-        document.documentElement.setAttribute('data-theme', config.theme.daisy);
-      }
-      
-      if (config.theme?.logo) {
-        const logoUrl = api.images.getUrl(config.theme.logo);
-        const favicon = document.getElementById('favicon');
-        if (favicon) favicon.href = logoUrl;
-      }
-    } catch (error) {
-      console.error('Erreur config:', error);
-    }
-  }
-
-  loadConfig();
-</script>
-
-<!-- Script 2 : Logique métier -->
-<script>
-
-  // 🛒 Gestion du panier
+<script define:vars={{ isOpen }}>
+  // ============================================
+  // 🛒 Gestion du panier - Script consolidé
+  // ============================================
+  
   let cart = [];
 
   // Formater le prix
@@ -191,19 +227,19 @@ try {
             
             <!-- Infos produit -->
             <div class="flex-1">
-              <h3 class="font-bold text-lg">${item.nom}</h3>
+              <h3 class="font-bold text-lg">${escapeHtml(item.nom)}</h3>
               
               <!-- Suppléments -->
               ${item.supplements && item.supplements.length > 0 ? `
                 <div class="text-sm text-base-content/70 mt-1">
-                  <span class="font-semibold">Avec:</span> ${item.supplements.map(s => s.name).join(', ')}
+                  <span class="font-semibold">Avec:</span> ${item.supplements.map(s => escapeHtml(s.name)).join(', ')}
                 </div>
               ` : ''}
               
               <!-- Ingrédients retirés -->
               ${item.removed_ingredients && item.removed_ingredients.length > 0 ? `
                 <div class="text-sm text-base-content/70 mt-1">
-                  <span class="font-semibold">Sans:</span> ${item.removed_ingredients.join(', ')}
+                  <span class="font-semibold">Sans:</span> ${item.removed_ingredients.map(i => escapeHtml(i)).join(', ')}
                 </div>
               ` : ''}
               
@@ -222,18 +258,18 @@ try {
               
               <!-- Contrôles quantité -->
               <div class="flex items-center gap-2">
-                <button class="btn btn-sm btn-circle" onclick="changeQuantity(${index}, -1)">
+                <button class="btn btn-sm btn-circle btn-decrease" data-index="${index}">
                   <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4" />
                   </svg>
                 </button>
                 <span class="font-semibold w-8 text-center">${item.quantite}</span>
-                <button class="btn btn-sm btn-circle" onclick="changeQuantity(${index}, 1)">
+                <button class="btn btn-sm btn-circle btn-increase" data-index="${index}">
                   <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
                   </svg>
                 </button>
-                <button class="btn btn-sm btn-ghost btn-circle text-error" onclick="removeItem(${index})">
+                <button class="btn btn-sm btn-ghost btn-circle text-error btn-remove" data-index="${index}">
                   <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                   </svg>
@@ -244,19 +280,55 @@ try {
         </div>
       </div>
     `).join('');
+    
+    // ✅ Event delegation - Attacher les événements après le rendu
+    attachCartEvents();
+  }
+
+  // ✅ Échapper le HTML pour éviter les injections XSS
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  // ✅ Event delegation - Propre et performant
+  function attachCartEvents() {
+    // Boutons diminuer quantité
+    document.querySelectorAll('.btn-decrease').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const index = parseInt(btn.dataset.index);
+        changeQuantity(index, -1);
+      });
+    });
+    
+    // Boutons augmenter quantité
+    document.querySelectorAll('.btn-increase').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const index = parseInt(btn.dataset.index);
+        changeQuantity(index, 1);
+      });
+    });
+    
+    // Boutons supprimer
+    document.querySelectorAll('.btn-remove').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const index = parseInt(btn.dataset.index);
+        removeItem(index);
+      });
+    });
   }
 
   // Mettre à jour le résumé
   function updateSummary() {
     const subtotal = cart.reduce((sum, item) => sum + (item.prix * item.quantite), 0);
     
-    // Pas de frais au panier, seulement le sous-total
     document.getElementById('subtotal').textContent = formatPrice(subtotal);
     document.getElementById('total').textContent = formatPrice(subtotal);
   }
 
   // Changer quantité
-  window.changeQuantity = function(index, delta) {
+  function changeQuantity(index, delta) {
     cart[index].quantite += delta;
     
     if (cart[index].quantite <= 0) {
@@ -264,13 +336,13 @@ try {
     }
     
     saveCart();
-  };
+  }
 
   // Supprimer article
-  window.removeItem = function(index) {
+  function removeItem(index) {
     cart.splice(index, 1);
     saveCart();
-  };
+  }
 
   // Vider le panier
   document.getElementById('clear-cart-btn')?.addEventListener('click', () => {
@@ -287,11 +359,17 @@ try {
     loadCart();
   }
 
-  // Bouton commander
+  // ✅ Bouton commander avec vérification ouverture
   document.getElementById('checkout-btn')?.addEventListener('click', () => {
     // Vérifier qu'il y a des articles
     if (cart.length === 0) {
-      alert('Votre panier est vide');
+      showToast('Votre panier est vide', 'warning');
+      return;
+    }
+    
+    // ✅ Vérifier si le restaurant est ouvert
+    if (!isOpen) {
+      showToast('Le restaurant est actuellement fermé. Les commandes seront disponibles lors de notre prochaine ouverture.', 'error');
       return;
     }
     
@@ -299,6 +377,25 @@ try {
     window.location.href = '/checkout';
   });
 
+  // Fonction toast
+  function showToast(message, type = 'info') {
+    const toast = document.createElement('div');
+    toast.className = `alert alert-${type} shadow-lg`;
+    toast.innerHTML = `
+      <div>
+        <span>${message}</span>
+      </div>
+    `;
+    
+    const container = document.getElementById('toast-container');
+    container.appendChild(toast);
+    
+    setTimeout(() => {
+      toast.remove();
+    }, 3000);
+  }
+
   // Charger au démarrage
+  document.addEventListener('astro:page-load', loadCart);
   loadCart();
 </script>

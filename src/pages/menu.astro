@@ -9,40 +9,53 @@ import CategorySelector from '../components/CategorySelector.astro';
 import ProductGrid from '../components/ProductGrid.astro';
 import api from '../lib/api';
 import "../assets/app.css";
+import { formatInTimeZone } from 'date-fns-tz';
 
 // Récupérer les suppléments et la config
 let supplements = [];
 let config: any = {};
-let isOpen = true;
+let isOpen = false; // ✅ Par défaut fermé en cas d'erreur
 let nextOpening = '';
 let currentSchedule: any[] = [];
-let debugInfo = ''; // Pour debug
+let theme = 'light';
+let logoUrl = '/favicon.ico';
 
 try {
   // ✅ Utiliser api.ts pour tout
   const menu = await api.menu.get();
   supplements = menu.supplements || [];
   
-  // Charger la config pour les horaires
+  // Charger la config pour les horaires ET le thème
   config = await api.config.get();
   
-  // ✅ CORRECTION : Utiliser le fuseau horaire de la Belgique
+  // ✅ Charger le thème côté serveur (pas de flash)
+  theme = config.theme?.daisy || 'light';
+  logoUrl = config.theme?.logo ? api.images.getUrl(config.theme.logo) : '/favicon.ico';
+  
+  // ✅ CORRECTION : Utiliser date-fns-tz pour le fuseau horaire
+  const TIMEZONE = 'Europe/Brussels';
   const now = new Date();
   
-  // Convertir en heure belge (Europe/Brussels)
-  const belgianTime = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Brussels' }));
+  const currentDay = formatInTimeZone(now, TIMEZONE, 'EEEE').toLowerCase();
+  const currentTime = formatInTimeZone(now, TIMEZONE, 'HH:mm');
   
-  const dayNames = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
-  const currentDay = dayNames[belgianTime.getDay()];
-  const currentTime = `${String(belgianTime.getHours()).padStart(2, '0')}:${String(belgianTime.getMinutes()).padStart(2, '0')}`;
+  // Mapper les jours anglais vers français
+  const dayMap: Record<string, string> = {
+    'monday': 'lundi',
+    'tuesday': 'mardi', 
+    'wednesday': 'mercredi',
+    'thursday': 'jeudi',
+    'friday': 'vendredi',
+    'saturday': 'samedi',
+    'sunday': 'dimanche'
+  };
   
-  currentSchedule = config.horaires?.[currentDay] || [];
+  const currentDayFr = dayMap[currentDay] || currentDay;
+  currentSchedule = config.horaires?.[currentDayFr] || [];
   
-  // Debug info
-  debugInfo = `Jour: ${currentDay} | Heure: ${currentTime} | Horaires: ${JSON.stringify(currentSchedule)}`;
-  console.log('🕐 Debug horaires:', debugInfo);
+  console.log(`🕐 ${currentDayFr} ${currentTime} | Horaires:`, currentSchedule);
   
-  // ✅ CORRECTION : Meilleure logique de comparaison d'heures
+  // ✅ Fonction de comparaison d'heures
   function timeToMinutes(time: string): number {
     const [hours, minutes] = time.split(':').map(Number);
     return hours * 60 + minutes;
@@ -55,17 +68,10 @@ try {
     const debutMinutes = timeToMinutes(plage.debut);
     const finMinutes = timeToMinutes(plage.fin);
     
-    // Gérer les horaires qui passent minuit (ex: 16:00 - 02:00)
     if (finMinutes < debutMinutes) {
-      // Fermeture après minuit : ouvert si >= debut OU <= fin
-      const result = currentMinutes >= debutMinutes || currentMinutes <= finMinutes;
-      console.log(`  Plage minuit: ${plage.debut}-${plage.fin} → ${result}`);
-      return result;
+      return currentMinutes >= debutMinutes || currentMinutes <= finMinutes;
     } else {
-      // Fermeture le même jour : ouvert si >= debut ET <= fin
-      const result = currentMinutes >= debutMinutes && currentMinutes <= finMinutes;
-      console.log(`  Plage normale: ${plage.debut}-${plage.fin} → ${result}`);
-      return result;
+      return currentMinutes >= debutMinutes && currentMinutes <= finMinutes;
     }
   });
   
@@ -82,7 +88,10 @@ try {
       nextOpening = `Ouverture aujourd'hui à ${nextSlot.debut}`;
     } else {
       // Chercher le lendemain
-      const tomorrowIndex = (belgianTime.getDay() + 1) % 7;
+      const dayNames = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
+      const tomorrowDate = new Date(now);
+      tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+      const tomorrowIndex = parseInt(formatInTimeZone(tomorrowDate, TIMEZONE, 'i')) % 7;
       const tomorrowDay = dayNames[tomorrowIndex];
       const tomorrowSchedule = config.horaires?.[tomorrowDay] || [];
       if (tomorrowSchedule.length > 0) {
@@ -95,7 +104,7 @@ try {
 } catch (error) {
   console.error('❌ Erreur chargement:', error);
   supplements = [];
-  isOpen = true; // Par défaut ouvert en cas d'erreur
+  // isOpen reste false par défaut
 }
 
 const cartItems = 0;
@@ -103,12 +112,12 @@ const cartTotal = 0;
 ---
 
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="fr" data-theme={theme}>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Menu - CMDOLA</title>
-  <link rel="icon" type="image/png" href="/favicon.ico" id="favicon">
+  <link rel="icon" type="image/png" href={logoUrl}>
   
   <!-- Charger les suppléments IMMÉDIATEMENT -->
   <script is:inline define:vars={{ supplements }}>
@@ -129,19 +138,14 @@ const cartTotal = 0;
   <!-- Alert si restaurant fermé -->
   {!isOpen && (
     <div class="container mx-auto px-4 mt-4">
-      <div class="alert alert-warning shadow-lg">
+      <div class="alert alert-warning shadow-lg" id="closed-alert">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 shrink-0 stroke-current" fill="none" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
         </svg>
         <div>
           <h3 class="font-bold">Restaurant actuellement fermé</h3>
-          <div class="text-sm">{nextOpening || 'Consultez nos horaires'}</div>
+          <div class="text-sm" id="next-opening-text">{nextOpening || 'Consultez nos horaires'}</div>
         </div>
-      </div>
-      
-      <!-- Debug info (à enlever en prod) -->
-      <div class="alert alert-info shadow-lg mt-2">
-        <div class="text-xs font-mono">{debugInfo}</div>
       </div>
     </div>
   )}
@@ -154,6 +158,7 @@ const cartTotal = 0;
   <!-- Grille de produits -->
   <ProductGrid 
     category="all"
+    isOpen={isOpen}
   />
   
   <!-- Toast Container -->
@@ -177,31 +182,11 @@ const cartTotal = 0;
   }
 </style>
 
-<script>
-  import api from '../lib/api';
-
-  async function loadConfig() {
-    try {
-      const config = await api.config.get();
-      
-      if (config.theme?.daisy) {
-        document.documentElement.setAttribute('data-theme', config.theme.daisy);
-      }
-      
-      if (config.theme?.logo) {
-        const logoUrl = api.images.getUrl(config.theme.logo);
-        const favicon = document.getElementById('favicon');
-        if (favicon) favicon.href = logoUrl;
-      }
-    } catch (error) {
-      console.error('❌ Erreur config:', error);
-    }
-  }
-
-  loadConfig();
-</script>
-
-<script define:vars={{ isOpen }}>
+<script define:vars={{ isOpen: isOpen, config }}>
+  // ============================================
+  // 🎯 Script consolidé - Panier + Auto-refresh
+  // ============================================
+  
   // Mise à jour du badge panier
   function updateCartBadge() {
     const cart = JSON.parse(localStorage.getItem('cart') || '[]');
@@ -229,28 +214,73 @@ const cartTotal = 0;
     }
   }
 
-  document.addEventListener('astro:page-load', () => {
-    updateCartBadge();
-  });
+  // ✅ Fonction de vérification du statut ouvert/fermé
+  function checkOpenStatus() {
+    const now = new Date();
+    const belgianTime = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Brussels' }));
+    
+    const dayNames = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
+    const currentDay = dayNames[belgianTime.getDay()];
+    const currentTime = `${String(belgianTime.getHours()).padStart(2, '0')}:${String(belgianTime.getMinutes()).padStart(2, '0')}`;
+    
+    const currentSchedule = config.horaires?.[currentDay] || [];
+    
+    function timeToMinutes(time) {
+      const [hours, minutes] = time.split(':').map(Number);
+      return hours * 60 + minutes;
+    }
+    
+    const currentMinutes = timeToMinutes(currentTime);
+    
+    const nowOpen = currentSchedule.some((plage) => {
+      const debutMinutes = timeToMinutes(plage.debut);
+      const finMinutes = timeToMinutes(plage.fin);
+      
+      if (finMinutes < debutMinutes) {
+        return currentMinutes >= debutMinutes || currentMinutes <= finMinutes;
+      } else {
+        return currentMinutes >= debutMinutes && currentMinutes <= finMinutes;
+      }
+    });
+    
+    // Si le statut a changé, recharger la page
+    if (nowOpen !== isOpen) {
+      console.log('🔄 Statut changé, rechargement...');
+      window.location.reload();
+    }
+  }
 
-  window.addEventListener('cart-updated', updateCartBadge);
-
-  // Bloquer les commandes si restaurant fermé
-  if (!isOpen) {
-    setTimeout(() => {
+  // ✅ Bloquer les commandes si restaurant fermé
+  function updateButtonsState() {
+    if (!isOpen) {
       document.querySelectorAll('.btn-primary').forEach(btn => {
-        if (btn.textContent.includes('Voir détails')) {
+        if (btn.textContent.includes('Voir détails') || btn.textContent.includes('Ajouter')) {
           btn.classList.remove('btn-primary');
           btn.classList.add('btn-disabled');
           btn.disabled = true;
           btn.textContent = 'Restaurant fermé';
         }
       });
-    }, 100);
-    
-    const originalOpenModal = window.openProductModal;
-    window.openProductModal = function() {
-      alert('Le restaurant est actuellement fermé. Les commandes seront disponibles lors de notre prochaine ouverture.');
-    };
+      
+      // Bloquer l'ouverture du modal
+      const originalOpenModal = window.openProductModal;
+      if (originalOpenModal) {
+        window.openProductModal = function() {
+          alert('Le restaurant est actuellement fermé. Les commandes seront disponibles lors de notre prochaine ouverture.');
+        };
+      }
+    }
   }
+
+  // Au chargement de la page
+  document.addEventListener('astro:page-load', () => {
+    updateCartBadge();
+    updateButtonsState();
+  });
+
+  // Écouter les mises à jour du panier
+  window.addEventListener('cart-updated', updateCartBadge);
+
+  // ✅ Auto-refresh toutes les minutes pour vérifier le statut
+  setInterval(checkOpenStatus, 60000); // 60 secondes
 </script>
