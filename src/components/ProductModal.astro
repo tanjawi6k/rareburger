@@ -13,16 +13,16 @@ interface Props {
 const { id } = Astro.props;
 ---
 
-<dialog id={`modal-${id}`} class="modal">
-  <div class="modal-box max-w-2xl">
+<dialog id={`modal-${id}`} class="modal modal-optimized">
+  <div class="modal-box modal-box-responsive max-w-2xl">
     
     <!-- Bouton fermer -->
     <form method="dialog">
-      <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+      <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2 z-10">✕</button>
     </form>
 
     <!-- Contenu du modal (sera rempli dynamiquement) -->
-    <div id={`modal-content-${id}`} class="space-y-4">
+    <div id={`modal-content-${id}`} class="modal-content-scroll space-y-4">
       <!-- Loading spinner -->
       <div class="flex justify-center py-8">
         <span class="loading loading-spinner loading-lg"></span>
@@ -34,6 +34,219 @@ const { id } = Astro.props;
     <button>close</button>
   </form>
 </dialog>
+
+<style>
+  /* ============================================
+   * 🎨 MODAL RESPONSIVE OPTIMISÉ
+   * ============================================ */
+  
+  /* Variables pour les safe areas */
+  .modal-optimized {
+    --modal-margin-top: max(1rem, env(safe-area-inset-top));
+    --modal-margin-bottom: max(1rem, env(safe-area-inset-bottom));
+    --modal-margin-horizontal: max(1rem, env(safe-area-inset-left), env(safe-area-inset-right));
+  }
+
+  /* Container principal de la modal */
+  .modal-box-responsive {
+    /* Hauteur max adaptative : 90% de la hauteur visible - marges */
+    max-height: calc(90vh - var(--modal-margin-top) - var(--modal-margin-bottom));
+    
+    /* Sur mobile, on utilise la hauteur réelle (--vh définie dans menu.astro) */
+    max-height: calc(90 * var(--vh, 1vh) - var(--modal-margin-top) - var(--modal-margin-bottom));
+    
+    /* Largeur adaptative */
+    width: calc(100% - (var(--modal-margin-horizontal) * 2));
+    max-width: 42rem; /* 2xl */
+    
+    /* Position centrée avec marges */
+    margin: var(--modal-margin-top) auto var(--modal-margin-bottom);
+    
+    /* Structure flex pour gérer le scroll */
+    display: flex;
+    flex-direction: column;
+    
+    /* Empêcher le débordement */
+    overflow: hidden;
+    
+    /* Padding réduit sur mobile */
+    padding: 1.5rem;
+  }
+
+  /* Zone scrollable du contenu */
+  .modal-content-scroll {
+    /* Permettre le scroll uniquement sur le contenu */
+    overflow-y: auto;
+    overflow-x: hidden;
+    
+    /* Smooth scroll */
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
+    
+    /* Flex pour occuper l'espace disponible */
+    flex: 1;
+    
+    /* Masquer la scrollbar sur mobile tout en gardant le scroll */
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+  }
+
+  /* Scrollbar personnalisée (Webkit) */
+  .modal-content-scroll::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .modal-content-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .modal-content-scroll::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 3px;
+  }
+
+  .modal-content-scroll::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 0, 0, 0.3);
+  }
+
+  /* ============================================
+   * 📱 RESPONSIVE MOBILE
+   * ============================================ */
+  
+  @media (max-width: 640px) {
+    .modal-box-responsive {
+      /* Utiliser presque toute la hauteur disponible sur mobile */
+      max-height: calc(92 * var(--vh, 1vh) - var(--modal-margin-top) - var(--modal-margin-bottom));
+      
+      /* Marges réduites */
+      --modal-margin-top: max(0.5rem, env(safe-area-inset-top));
+      --modal-margin-bottom: max(0.5rem, env(safe-area-inset-bottom));
+      --modal-margin-horizontal: max(0.5rem, env(safe-area-inset-left), env(safe-area-inset-right));
+      
+      /* Padding réduit */
+      padding: 1rem;
+      
+      /* Pleine largeur avec petites marges */
+      width: calc(100% - 1rem);
+      max-width: calc(100% - 1rem);
+    }
+
+    /* Réduire les espacements internes sur mobile */
+    .modal-content-scroll {
+      gap: 0.75rem;
+    }
+
+    /* Ajuster les éléments internes */
+    .modal-content-scroll .space-y-4 > * + * {
+      margin-top: 0.75rem;
+    }
+  }
+
+  /* ============================================
+   * 📐 ORIENTATION LANDSCAPE (petits écrans)
+   * ============================================ */
+  
+  @media (max-width: 915px) and (orientation: landscape) {
+    .modal-box-responsive {
+      /* Utiliser davantage la hauteur en paysage */
+      max-height: calc(95 * var(--vh, 1vh) - var(--modal-margin-top) - var(--modal-margin-bottom));
+      
+      /* Marges minimales */
+      --modal-margin-top: max(0.25rem, env(safe-area-inset-top));
+      --modal-margin-bottom: max(0.25rem, env(safe-area-inset-bottom));
+      
+      /* Padding réduit */
+      padding: 0.75rem;
+    }
+  }
+
+  /* ============================================
+   * 🎯 OPTIMISATIONS CONTENU
+   * ============================================ */
+  
+  /* Images du carousel plus compactes sur mobile */
+  @media (max-width: 640px) {
+    .modal-content-scroll .carousel {
+      height: 12rem !important; /* 192px */
+    }
+    
+    .modal-content-scroll .carousel img {
+      object-fit: cover;
+    }
+  }
+
+  /* Boutons du carousel plus petits sur mobile */
+  @media (max-width: 640px) {
+    .modal-content-scroll .btn-circle {
+      width: 2rem;
+      height: 2rem;
+      min-height: 2rem;
+      font-size: 0.875rem;
+    }
+  }
+
+  /* Dividers plus compacts */
+  @media (max-width: 640px) {
+    .modal-content-scroll .divider {
+      margin-top: 0.5rem;
+      margin-bottom: 0.5rem;
+    }
+  }
+
+  /* Badges plus petits sur mobile */
+  @media (max-width: 640px) {
+    .modal-content-scroll .badge {
+      font-size: 0.75rem;
+      padding: 0.25rem 0.5rem;
+    }
+  }
+
+  /* ============================================
+   * 🔧 FIX iOS & ANDROID
+   * ============================================ */
+  
+  /* Éviter le bounce sur iOS */
+  .modal-content-scroll {
+    overscroll-behavior: contain;
+  }
+
+  /* Fix pour le backdrop sur mobile */
+  @media (max-width: 640px) {
+    .modal-backdrop {
+      background-color: rgba(0, 0, 0, 0.5);
+    }
+  }
+
+  /* Animation d'ouverture fluide */
+  .modal-optimized[open] {
+    animation: modal-appear 0.2s ease-out;
+  }
+
+  @keyframes modal-appear {
+    from {
+      opacity: 0;
+      transform: scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  /* ============================================
+   * 🌓 DARK MODE
+   * ============================================ */
+  
+  @media (prefers-color-scheme: dark) {
+    .modal-content-scroll::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.2);
+    }
+
+    .modal-content-scroll::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.3);
+    }
+  }
+</style>
 
 <script define:vars={{ modalId: id }}>
   // Stock les données du produit chargé
@@ -120,7 +333,7 @@ const { id } = Astro.props;
         <div class="carousel w-full rounded-lg ${hasMultipleImages ? 'h-64' : 'h-48'}">
           ${data.images.map((img, index) => `
             <div id="slide-${productId}-${index}" class="carousel-item relative w-full">
-              <img src="${img}" class="w-full object-cover" alt="${data.nom}" />
+              <img src="${img}" class="w-full object-cover" alt="${data.nom}" loading="lazy" />
               ${hasMultipleImages ? `
                 <div class="absolute flex justify-between transform -translate-y-1/2 left-5 right-5 top-1/2">
                   <a href="#slide-${productId}-${index > 0 ? index - 1 : data.images.length - 1}" class="btn btn-circle btn-sm">❮</a>
@@ -141,7 +354,7 @@ const { id } = Astro.props;
 
       <!-- Titre et prix -->
       <div>
-        <h3 class="text-2xl font-bold">${data.nom}</h3>
+        <h3 class="text-xl sm:text-2xl font-bold">${data.nom}</h3>
         <p class="text-sm text-base-content/70 mt-2">${data.description}</p>
         ${data.allergenes.length > 0 ? `
           <div class="flex flex-wrap gap-1 mt-2">
@@ -157,16 +370,16 @@ const { id } = Astro.props;
       <!-- Ingrédients retirables -->
       ${hasRemovableIngredients ? `
         <div>
-          <h4 class="font-bold mb-2">Retirer des ingrédients (gratuit)</h4>
+          <h4 class="font-bold mb-2 text-sm sm:text-base">Retirer des ingrédients (gratuit)</h4>
           <div class="space-y-2" id="removable-list-${productId}">
             ${data.removable_ingredients.map(ingredient => `
-              <label class="flex items-center gap-2 cursor-pointer p-2 rounded hover:bg-base-200">
+              <label class="flex items-center gap-2 cursor-pointer p-2 rounded hover:bg-base-200 active:bg-base-300">
                 <input 
                   type="checkbox" 
                   class="checkbox checkbox-sm" 
                   data-removable-ingredient="${ingredient}"
                 />
-                <span class="line-through decoration-error decoration-2">${ingredient}</span>
+                <span class="line-through decoration-error decoration-2 text-sm">${ingredient}</span>
               </label>
             `).join('')}
           </div>
@@ -177,7 +390,7 @@ const { id } = Astro.props;
       <!-- Suppléments -->
       ${hasSupplements ? `
         <div>
-          <h4 class="font-bold mb-2">Suppléments disponibles</h4>
+          <h4 class="font-bold mb-2 text-sm sm:text-base">Suppléments disponibles</h4>
           <div class="space-y-2" id="supplements-list-${productId}">
             ${data.supplements.map(suppId => {
               // Chercher le supplément dans la liste globale
@@ -193,18 +406,18 @@ const { id } = Astro.props;
               }
               
               return `
-                <label class="flex items-center justify-between cursor-pointer p-2 rounded hover:bg-base-200">
+                <label class="flex items-center justify-between cursor-pointer p-2 rounded hover:bg-base-200 active:bg-base-300">
                   <div class="flex items-center gap-2">
                     <input 
                       type="checkbox" 
-                      class="checkbox checkbox-primary" 
+                      class="checkbox checkbox-primary checkbox-sm" 
                       data-supplement-id="${supp.id}"
                       data-supplement-price="${supp.price}"
                       onchange="updatePrice('${productId}')"
                     />
-                    <span>${supp.name}</span>
+                    <span class="text-sm">${supp.name}</span>
                   </div>
-                  <span class="badge badge-ghost">+${supp.price.toFixed(2)}€</span>
+                  <span class="badge badge-ghost badge-sm">+${supp.price.toFixed(2)}€</span>
                 </label>
               `;
             }).join('')}
@@ -214,9 +427,9 @@ const { id } = Astro.props;
       ` : ''}
 
       <!-- Quantité et Prix total -->
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-4">
-          <span class="font-semibold">Quantité :</span>
+      <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+        <div class="flex items-center gap-3 sm:gap-4">
+          <span class="font-semibold text-sm sm:text-base">Quantité :</span>
           <div class="join">
             <button class="btn btn-sm join-item" onclick="changeQuantity('${productId}', -1)">-</button>
             <input 
@@ -232,8 +445,8 @@ const { id } = Astro.props;
         </div>
         
         <div class="text-right">
-          <div class="text-sm text-base-content/70">Prix total</div>
-          <div id="total-price-${productId}" class="text-2xl font-bold text-primary">
+          <div class="text-xs sm:text-sm text-base-content/70">Prix total</div>
+          <div id="total-price-${productId}" class="text-xl sm:text-2xl font-bold text-primary">
             ${data.prix.toFixed(2)}€
           </div>
         </div>
@@ -250,6 +463,9 @@ const { id } = Astro.props;
         Ajouter au panier
       </button>
     `;
+
+    // Scroll en haut du contenu après render
+    modalContent.scrollTop = 0;
   }
 
   // Fonction pour changer la quantité
