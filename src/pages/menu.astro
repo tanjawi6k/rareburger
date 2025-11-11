@@ -21,18 +21,18 @@ let theme = 'light';
 let logoUrl = '/favicon.ico';
 
 try {
-  // ✅ Utiliser api.ts pour tout
-  const menu = await api.menu.get();
+  // ⚡ Charger menu ET config EN PARALLÈLE (au lieu de l'un après l'autre)
+  const [menu, config] = await Promise.all([
+    api.menu.get(),
+    api.config.get()
+  ]);
+  
+  // Extraire les suppléments et le thème
   supplements = menu.supplements || [];
-  
-  // Charger la config pour les horaires ET le thème
-  config = await api.config.get();
-  
-  // ✅ Charger le thème côté serveur (pas de flash)
   theme = config.theme?.daisy || 'light';
   logoUrl = config.theme?.logo ? api.images.getUrl(config.theme.logo) : '/favicon.ico';
   
-  // ✅ CORRECTION : Utiliser date-fns-tz pour le fuseau horaire
+  // ✅ Gestion du fuseau horaire
   const TIMEZONE = 'Europe/Brussels';
   const now = new Date();
   
