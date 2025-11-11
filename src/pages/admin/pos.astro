@@ -16,7 +16,7 @@ if (!user) {
 // Vérifier que l'utilisateur a les droits (admin ou chef)
 const hasAccess = user.roles?.includes('admin') 
   || user.roles?.includes('chef') 
-  || user.roles?.includes('caissier');  // ✅ NOUVEAU
+  || user.roles?.includes('caissier');
 if (!hasAccess) {
   return Astro.redirect('/login');
 }
@@ -177,7 +177,7 @@ if (!hasAccess) {
   <!-- ========================================== -->
   <!-- ONGLET 1 : CAISSE (POS) -->
   <!-- ========================================== -->
-  <div id="tab-caisse" class="tab-content">  <!-- PAS de 'hidden' ! -->
+  <div id="tab-caisse" class="tab-content">
     <div class="container mx-auto px-4 pb-8">
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
@@ -494,43 +494,43 @@ if (!hasAccess) {
 
       <div class="divider"></div>
 
-    <!-- Impression ticket -->
-    <div class="mb-4">
-      <button id="printTicketBtn" class="btn btn-accent btn-lg btn-block">
-       <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-       </svg>
-       🖨️ Imprimer le ticket
-      </button>
-    </div>
-
-    <div class="divider"></div>
-
-       <!-- Actions -->
-     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-  
-      <!-- Changer statut -->
-      <div class="form-control">
-        <label class="label">
-          <span class="label-text font-bold">Changer le statut</span>
-        </label>
-        <select id="modalOrderStatut" class="select select-bordered select-lg">
-          <option value="nouvelle">🆕 Nouvelle</option>
-          <option value="en_preparation">👨‍🍳 En préparation</option>
-          <option value="prete">✅ Prête</option>
-          <option value="en_livraison">🚚 En livraison</option>
-          <option value="terminee">✔️ Terminée</option>
-        </select>
-      </div>
-
-      <!-- Bouton confirmer -->
-      <div class="flex items-end">
-        <button id="confirmOrderStatus" class="btn btn-primary btn-lg btn-block">
-          Confirmer le changement
+      <!-- Impression ticket -->
+      <div class="mb-4">
+        <button id="printTicketBtn" class="btn btn-accent btn-lg btn-block">
+         <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+         </svg>
+         🖨️ Imprimer le ticket
         </button>
       </div>
 
-    </div>
+      <div class="divider"></div>
+
+      <!-- Actions -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    
+        <!-- Changer statut -->
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text font-bold">Changer le statut</span>
+          </label>
+          <select id="modalOrderStatut" class="select select-bordered select-lg">
+            <option value="nouvelle">🆕 Nouvelle</option>
+            <option value="en_preparation">👨‍🍳 En préparation</option>
+            <option value="prete">✅ Prête</option>
+            <option value="en_livraison">🚚 En livraison</option>
+            <option value="terminee">✔️ Terminée</option>
+          </select>
+        </div>
+
+        <!-- Bouton confirmer -->
+        <div class="flex items-end">
+          <button id="confirmOrderStatus" class="btn btn-primary btn-lg btn-block">
+            Confirmer le changement
+          </button>
+        </div>
+
+      </div>
     </div>
     <form method="dialog" class="modal-backdrop">
       <button>close</button>
@@ -610,52 +610,57 @@ if (!hasAccess) {
   </dialog>
 
   <!-- ========================================== -->
-  <!-- MODAL : Paiement Cash -->
+  <!-- MODAL : Choix de paiement -->
   <!-- ========================================== -->
-
   <dialog id="paymentChoiceModal" class="modal">
-  <div class="modal-box max-w-2xl">
-    <h3 class="font-bold text-3xl mb-8 text-center">💳 Mode de paiement</h3>
-    
-    <p class="text-center text-lg mb-8 text-base-content/70">
-      Comment le client souhaite-t-il payer ?
-    </p>
-
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <div class="modal-box max-w-2xl">
+      <h3 class="font-bold text-3xl mb-8 text-center">💳 Mode de paiement</h3>
       
-      <!-- Bouton CB -->
-      <button id="choiceCardBtn" class="btn btn-lg h-auto py-8 flex-col gap-4 hover:scale-105 transition-transform">
-        <div class="text-6xl">💳</div>
-        <div>
-          <div class="text-2xl font-bold">Carte bancaire</div>
-          <div class="text-sm opacity-70">Terminal de paiement</div>
-        </div>
-      </button>
+      <p class="text-center text-lg mb-8 text-base-content/70">
+        Comment le client souhaite-t-il payer ?
+      </p>
 
-      <!-- Bouton Cash -->
-      <button id="choiceCashBtn" class="btn btn-lg h-auto py-8 flex-col gap-4 hover:scale-105 transition-transform">
-        <div class="text-6xl">💵</div>
-        <div>
-          <div class="text-2xl font-bold">Espèces</div>
-          <div class="text-sm opacity-70">Paiement en liquide</div>
-        </div>
-      </button>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        
+        <!-- Bouton CB -->
+        <button id="choiceCardBtn" class="btn btn-lg h-auto py-8 flex-col gap-4 hover:scale-105 transition-transform">
+          <div class="text-6xl">💳</div>
+          <div>
+            <div class="text-2xl font-bold">Carte bancaire</div>
+            <div class="text-sm opacity-70">Terminal de paiement</div>
+          </div>
+        </button>
 
+        <!-- Bouton Cash -->
+        <button id="choiceCashBtn" class="btn btn-lg h-auto py-8 flex-col gap-4 hover:scale-105 transition-transform">
+          <div class="text-6xl">💵</div>
+          <div>
+            <div class="text-2xl font-bold">Espèces</div>
+            <div class="text-sm opacity-70">Paiement en liquide</div>
+          </div>
+        </button>
+
+      </div>
+
+      <div class="modal-action justify-center">
+        <button onclick="paymentChoiceModal.close()" class="btn btn-ghost btn-lg">
+          Annuler
+        </button>
+      </div>
     </div>
-
-    <div class="modal-action justify-center">
-      <button onclick="paymentChoiceModal.close()" class="btn btn-ghost btn-lg">
-        Annuler
-      </button>
-    </div>
-  </div>
-  <form method="dialog" class="modal-backdrop">
-    <button>close</button>
-  </form>
-</dialog>
+    <form method="dialog" class="modal-backdrop">
+      <button>close</button>
+    </form>
+  </dialog>
 
   <!-- Toast Container -->
   <div id="toast-container" class="toast toast-top toast-end z-50"></div>
+
+  <!-- ✅ NOUVEAU : Audio notification -->
+  <audio id="notificationSound" preload="auto">
+    <source src="/sounds/kitchen-bell.mp3" type="audio/mpeg">
+    <source src="/sounds/kitchen-bell.ogg" type="audio/ogg">
+  </audio>
 
 </body>
 </html>
@@ -679,6 +684,19 @@ let allCommandes = [];
 let currentOrderId = null;
 let currentProductForCart = null;
 let autoRefreshInterval = null;
+let lastCommandesCount = 0; // ✅ NOUVEAU : Pour détecter nouvelles commandes
+
+// ==========================================
+// 🔔 NOTIFICATION SONORE
+// ==========================================
+function playNotificationSound() {
+  const audio = document.getElementById('notificationSound');
+  if (audio) {
+    audio.volume = 0.8; // Volume à 80%
+    audio.currentTime = 0; // Remettre au début
+    audio.play().catch(e => console.log('🔇 Son bloqué par le navigateur:', e));
+  }
+}
 
 // ==========================================
 // 🎨 CONFIGURATION & THÈME
@@ -782,16 +800,12 @@ function renderCategoryFilters() {
 
   container.innerHTML = html;
 
-  // ✅ NOUVEAU : Attacher les événements APRÈS le render
   setTimeout(() => {
     document.querySelectorAll('.category-filter').forEach(btn => {
       btn.addEventListener('click', function() {
-        // Retirer active de tous
         document.querySelectorAll('.category-filter').forEach(b => b.classList.remove('active'));
-        // Ajouter active au bouton cliqué
         this.classList.add('active');
         
-        // Filtrer
         currentCategoryFilter = this.dataset.category;
         console.log('🔵 Filtre appliqué:', currentCategoryFilter);
         renderProducts();
@@ -816,7 +830,6 @@ function renderProducts() {
   const html = filtered.map(product => {
     const isAvailable = product.disponible !== false;
     
-    // ✅ FIX : Utiliser images[0] au lieu de image
     const imageUrl = product.images && product.images[0] 
       ? api.images.getUrl(product.images[0]) 
       : 'https://via.placeholder.com/400/e5e7eb/6b7280?text=Pas+d\'image';
@@ -857,7 +870,6 @@ window.openProductModal = function(productId) {
   document.getElementById('modalProductDescription').textContent = product.description || '';
   document.getElementById('modalProductPrice').textContent = formatPrice(product.prix);
   
-  // ✅ FIX
   const imageUrl = product.images && product.images[0] 
     ? api.images.getUrl(product.images[0]) 
     : 'https://via.placeholder.com/400/e5e7eb/6b7280?text=Pas+d\'image';
@@ -865,10 +877,7 @@ window.openProductModal = function(productId) {
   document.getElementById('modalQuantity').value = 1;
   document.getElementById('modalInstructions').value = '';
 
-  // Suppléments
   renderSupplements(product);
-
-  // Ingrédients à retirer
   renderIngredients(product);
 
   productModal.showModal();
@@ -934,7 +943,6 @@ document.getElementById('decreaseQty').addEventListener('click', () => {
 document.getElementById('addToCartBtn').addEventListener('click', () => {
   const quantity = parseInt(document.getElementById('modalQuantity').value);
   
-  // Récupérer suppléments sélectionnés
   const supplements = [];
   document.querySelectorAll('.supplement-checkbox:checked').forEach(cb => {
     supplements.push({
@@ -944,7 +952,6 @@ document.getElementById('addToCartBtn').addEventListener('click', () => {
     });
   });
 
-  // Récupérer ingrédients retirés
   const removedIngredients = [];
   document.querySelectorAll('.ingredient-checkbox:checked').forEach(cb => {
     removedIngredients.push(cb.dataset.name);
@@ -952,7 +959,6 @@ document.getElementById('addToCartBtn').addEventListener('click', () => {
 
   const instructions = document.getElementById('modalInstructions').value;
 
-  // Calculer prix total avec suppléments
   let totalPrice = currentProductForCart.prix;
   supplements.forEach(supp => {
     totalPrice += supp.price;
@@ -1053,7 +1059,6 @@ document.getElementById('validateOrder').addEventListener('click', async () => {
   const tableNumber = document.getElementById('tableNumber').value;
   const notes = document.getElementById('orderNotes').value;
 
-  // Vérifier numéro de table si sur place
   if (orderType === 'sur_place' && !tableNumber) {
     showToast('Veuillez indiquer le numéro de table', 'warning');
     return;
@@ -1061,14 +1066,12 @@ document.getElementById('validateOrder').addEventListener('click', async () => {
 
   const total = currentCart.reduce((sum, item) => sum + (item.prix * item.quantite), 0);
 
-  // Demander mode de paiement
   const paymentMode = await showPaymentChoice();
   if (!paymentMode) {
     showToast('Paiement annulé', 'info');
     return;
   }
 
-  // Afficher modal de paiement approprié
   if (paymentMode === 'card') {
     document.getElementById('cardPaymentAmount').textContent = formatPrice(total);
     paymentCardModal.showModal();
@@ -1080,7 +1083,6 @@ document.getElementById('validateOrder').addEventListener('click', async () => {
   }
 });
 
-// Choix du mode de paiement
 // Choix du mode de paiement avec modal
 function showPaymentChoice() {
   return new Promise((resolve) => {
@@ -1088,13 +1090,11 @@ function showPaymentChoice() {
     const cardBtn = document.getElementById('choiceCardBtn');
     const cashBtn = document.getElementById('choiceCashBtn');
     
-    // Fonction pour nettoyer les listeners
     const cleanup = () => {
       cardBtn.replaceWith(cardBtn.cloneNode(true));
       cashBtn.replaceWith(cashBtn.cloneNode(true));
     };
     
-    // Event listeners
     document.getElementById('choiceCardBtn').onclick = () => {
       modal.close();
       cleanup();
@@ -1107,7 +1107,6 @@ function showPaymentChoice() {
       resolve('cash');
     };
     
-    // Si fermeture sans choix, on annule
     modal.addEventListener('close', () => {
       cleanup();
       resolve(null);
@@ -1184,7 +1183,6 @@ async function finalizeOrder(paymentMode) {
     
     console.log('✅ Commande créée:', response.numero);
 
-    // TODO: Implémenter impression Epson POS
     console.log('🖨️ Impression ticket simulée');
     console.log('Ticket:', {
       numero: response.numero,
@@ -1195,18 +1193,12 @@ async function finalizeOrder(paymentMode) {
 
     showToast(`Commande ${response.numero} validée !`, 'success');
 
-    // Vider le panier
     currentCart = [];
     updateCartDisplay();
     
-    // ✅ FIX : Réinitialiser TOUT le formulaire
     document.getElementById('orderNotes').value = '';
     document.getElementById('tableNumber').value = '';
-    
-    // Réinitialiser le type à "sur_place" par défaut
     document.getElementById('orderType').value = 'sur_place';
-    
-    // Trigger l'événement change pour synchroniser l'affichage du champ table
     document.getElementById('orderType').dispatchEvent(new Event('change'));
 
   } catch (error) {
@@ -1224,6 +1216,15 @@ async function loadCommandes() {
     
     console.log('🔄 Chargement commandes actives...');
     const data = await api.commandes.listActives();
+    
+    // ✅ NOUVEAU : Détecter nouvelles commandes
+    const newCount = (data.commandes || []).length;
+    if (newCount > lastCommandesCount && lastCommandesCount > 0) {
+      console.log('🔔 Nouvelle commande détectée !');
+      playNotificationSound();
+      showToast('🔔 Nouvelle commande reçue !', 'info');
+    }
+    lastCommandesCount = newCount;
     
     allCommandes = data.commandes || [];
     allCommandes.sort((a, b) => new Date(a.date_creation) - new Date(b.date_creation));
@@ -1439,13 +1440,8 @@ function printOrderTicket(commande) {
   console.log('🖨️ ========================================');
   console.log('');
   
-  // TODO: Implémenter impression Epson POS
-  // Endpoint backend à créer: POST /api/print-ticket
-  // Données à envoyer: { commande_id: commande.id }
-  
   showToast('🖨️ Impression simulée (voir console)', 'info');
   
-  // Feedback visuel
   const printBtn = document.getElementById('printTicketBtn');
   const originalText = printBtn.innerHTML;
   printBtn.innerHTML = '✅ Imprimé !';
@@ -1613,7 +1609,6 @@ function renderStockCategoryFilters() {
 
   container.innerHTML = html;
 
-  // ✅ NOUVEAU : Attacher les événements APRÈS le render
   setTimeout(() => {
     document.querySelectorAll('.stock-category-filter').forEach(btn => {
       btn.addEventListener('click', function() {
@@ -1709,8 +1704,6 @@ function formatPrice(price) {
 function getTimeElapsed(dateStr) {
   if (!dateStr) return { text: "Date inconnue", urgent: false };
   
-  // ✅ FIX : Nettoyer le format de date invalide du backend
-  // Enlever le Z en trop si la date contient déjà +00:00
   let cleanDateStr = dateStr;
   if (dateStr.includes('+00:00Z')) {
     cleanDateStr = dateStr.replace('+00:00Z', 'Z');
@@ -1719,7 +1712,6 @@ function getTimeElapsed(dateStr) {
   const now = new Date();
   const orderDate = new Date(cleanDateStr);
   
-  // Vérifier si la date est valide
   if (isNaN(orderDate.getTime())) {
     console.error('❌ Date invalide:', dateStr);
     return { text: "Date invalide", urgent: false };
@@ -1738,6 +1730,7 @@ function getTimeElapsed(dateStr) {
   const remainingMins = diffMins % 60;
   return { text: `Il y a ${diffHours}h${String(remainingMins).padStart(2, '0')}`, urgent: true };
 }
+
 function getTypeInfo(type) {
   const types = {
     'sur_place': { icon: '🍽️', badge: 'badge-success', label: 'Sur place' },
