@@ -1,33 +1,30 @@
 // src/pages/manifest.json.ts
 export const prerender = false;
-
 import type { APIRoute } from 'astro';
 
-const RESTAURANT_ID = import.meta.env.PUBLIC_DEFAULT_RESTAURANT_ID || 'rare-burger';
 const API_BASE_URL = import.meta.env.PUBLIC_API_URL || 'https://api.cmdola.be/api';
 
 export const GET: APIRoute = async () => {
   try {
-    // Récupérer la config du restaurant
     const configResponse = await fetch(`${API_BASE_URL}/$config`);
     const config = await configResponse.json();
-
+    
     const logoUrl = config.theme?.logo 
       ? `${API_BASE_URL}/images/$${config.theme.logo}`
       : '/favicon.ico';
-
+    
     const restaurantName = config.nom || 'CMDOLA';
-
-    // Générer le manifest dynamiquement
+    
+    // ✅ MODIFIÉ pour POS
     const manifest = {
-      name: `${restaurantName} - Livraison`,
-      short_name: restaurantName,
-      description: `Application de livraison pour ${restaurantName}`,
-      start_url: '/livraison',
+      name: `${restaurantName} - Point de Vente`,
+      short_name: `${restaurantName} POS`,
+      description: `Terminal de caisse pour ${restaurantName}`,
+      start_url: '/admin/pos',  // ✅ CHANGÉ
       display: 'standalone',
       background_color: '#1e293b',
       theme_color: '#1e293b',
-      orientation: 'portrait',
+      orientation: 'landscape',  // ✅ Paysage pour tablette
       icons: [
         {
           src: logoUrl,
@@ -40,14 +37,9 @@ export const GET: APIRoute = async () => {
           sizes: '192x192',
           type: 'image/png',
           purpose: 'any maskable'
-        },
-        {
-          src: logoUrl,
-          sizes: '128x128',
-          type: 'image/png'
         }
       ],
-      categories: ['business', 'food'],
+      categories: ['business', 'productivity'],  // ✅ CHANGÉ
       lang: 'fr-BE',
       dir: 'ltr'
     };
@@ -56,21 +48,20 @@ export const GET: APIRoute = async () => {
       status: 200,
       headers: {
         'Content-Type': 'application/json',
-        'Cache-Control': 'public, max-age=3600' // Cache 1h
+        'Cache-Control': 'public, max-age=3600'
       }
     });
-
   } catch (error) {
     console.error('Erreur génération manifest:', error);
     
-    // Fallback en cas d'erreur
     const fallbackManifest = {
-      name: 'CMDOLA Livraison',
-      short_name: 'Livraison',
-      start_url: '/livraison',
+      name: 'CMDOLA Point de Vente',
+      short_name: 'POS',
+      start_url: '/admin/pos',
       display: 'standalone',
       background_color: '#1e293b',
       theme_color: '#1e293b',
+      orientation: 'landscape',
       icons: [
         {
           src: '/favicon.ico',
@@ -79,7 +70,7 @@ export const GET: APIRoute = async () => {
         }
       ]
     };
-
+    
     return new Response(JSON.stringify(fallbackManifest), {
       status: 200,
       headers: {
