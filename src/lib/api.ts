@@ -353,6 +353,31 @@ export const stripe = {
   },
 };
 
+
+
+
+// ============================================
+// 🖨️ PRINT - Impression de tickets
+// ============================================
+export const print = {
+  /**
+   * Imprimer un ticket de commande sur l'imprimante thermique
+   */
+  printTicket: async (commandeId: string) => {
+    return apiFetch<{
+      success: boolean;
+      message: string;
+      commande_numero: string;
+    }>(`${API_BASE_URL}/print-ticket`, {
+      method: 'POST',
+      body: JSON.stringify({ commande_id: commandeId }),
+    });
+  },
+};
+
+
+
+
 // ============================================
 // 🎯 Export par défaut
 // ============================================
@@ -365,6 +390,7 @@ export const api = {
   stats,
   health,
   stripe,
+  print,
   API_BASE_URL,
 };
 
