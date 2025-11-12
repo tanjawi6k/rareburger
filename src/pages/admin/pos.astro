@@ -1055,31 +1055,57 @@ document.getElementById('orderType').addEventListener('change', (e) => {
 document.getElementById('validateOrder').addEventListener('click', async () => {
   if (currentCart.length === 0) return;
 
-  const orderType = document.getElementById('orderType').value;
-  const tableNumber = document.getElementById('tableNumber').value;
-  const notes = document.getElementById('orderNotes').value;
+  // ✅ PROTECTION CONTRE DOUBLE-CLIC
+  const validateBtn = document.getElementById('validateOrder');
+  if (validateBtn.disabled) return; // Déjà en cours
+  validateBtn.disabled = true;
+  const originalText = validateBtn.textContent;
+  validateBtn.innerHTML = '<span class="loading loading-spinner loading-sm"></span> Traitement...';
 
-  if (orderType === 'sur_place' && !tableNumber) {
-    showToast('Veuillez indiquer le numéro de table', 'warning');
-    return;
-  }
+  try {
+    const orderType = document.getElementById('orderType').value;
+    const tableNumber = document.getElementById('tableNumber').value;
+    const notes = document.getElementById('orderNotes').value;
 
-  const total = currentCart.reduce((sum, item) => sum + (item.prix * item.quantite), 0);
+    if (orderType === 'sur_place' && !tableNumber) {
+      showToast('Veuillez indiquer le numéro de table', 'warning');
+      // Réactiver le bouton
+      validateBtn.disabled = false;
+      validateBtn.textContent = originalText;
+      return;
+    }
 
-  const paymentMode = await showPaymentChoice();
-  if (!paymentMode) {
-    showToast('Paiement annulé', 'info');
-    return;
-  }
+    const total = currentCart.reduce((sum, item) => sum + (item.prix * item.quantite), 0);
 
-  if (paymentMode === 'card') {
-    document.getElementById('cardPaymentAmount').textContent = formatPrice(total);
-    paymentCardModal.showModal();
-  } else if (paymentMode === 'cash') {
-    document.getElementById('cashPaymentAmount').textContent = formatPrice(total);
-    document.getElementById('cashGiven').value = '';
-    document.getElementById('changeSection').classList.add('hidden');
-    paymentCashModal.showModal();
+    const paymentMode = await showPaymentChoice();
+    if (!paymentMode) {
+      showToast('Paiement annulé', 'info');
+      // Réactiver le bouton
+      validateBtn.disabled = false;
+      validateBtn.textContent = originalText;
+      return;
+    }
+
+    if (paymentMode === 'card') {
+      document.getElementById('cardPaymentAmount').textContent = formatPrice(total);
+      paymentCardModal.showModal();
+    } else if (paymentMode === 'cash') {
+      document.getElementById('cashPaymentAmount').textContent = formatPrice(total);
+      document.getElementById('cashGiven').value = '';
+      document.getElementById('changeSection').classList.add('hidden');
+      paymentCashModal.showModal();
+    }
+
+    // Réactiver le bouton (sera finalisé après paiement)
+    validateBtn.disabled = false;
+    validateBtn.textContent = originalText;
+
+  } catch (error) {
+    console.error('Erreur validation:', error);
+    showToast('Erreur lors de la validation', 'error');
+    // Réactiver le bouton en cas d'erreur
+    validateBtn.disabled = false;
+    validateBtn.textContent = originalText;
   }
 });
 
@@ -1196,7 +1222,8 @@ async function finalizeOrder(paymentMode) {
     
     currentCart = [];
     updateCartDisplay();
-    
+
+    document.getElementById('validateOrder').disabled = false;
     document.getElementById('orderNotes').value = '';
     document.getElementById('tableNumber').value = '';
     document.getElementById('orderType').value = 'sur_place';
