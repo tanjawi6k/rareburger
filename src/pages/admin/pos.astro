@@ -1155,9 +1155,9 @@ async function finalizeOrder(paymentMode) {
     const orderType = document.getElementById('orderType').value;
     const tableNumber = document.getElementById('tableNumber').value;
     const notes = document.getElementById('orderNotes').value;
-
+    
     const total = currentCart.reduce((sum, item) => sum + (item.prix * item.quantite), 0);
-
+    
     const orderData = {
       client: {
         nom: 'Caisse',
@@ -1177,22 +1177,23 @@ async function finalizeOrder(paymentMode) {
       notes: notes,
       numero_table: orderType === 'sur_place' ? tableNumber : null
     };
-
+    
     console.log('📤 Création commande caisse...');
     const response = await api.commandes.create(orderData);
     
     console.log('✅ Commande créée:', response.numero);
-
-    console.log('🖨️ Impression ticket simulée');
-    console.log('Ticket:', {
-      numero: response.numero,
-      articles: currentCart,
-      total: total,
-      paiement: paymentMode
-    });
-
-    showToast(`Commande ${response.numero} validée !`, 'success');
-
+    
+    // ✅ Impression automatique du ticket
+    try {
+      console.log('🖨️ Impression automatique du ticket...');
+      await api.print.printTicket(response.id);
+      console.log('✅ Ticket imprimé automatiquement');
+      showToast(`Commande ${response.numero} validée et imprimée !`, 'success');
+    } catch (printError) {
+      console.error('⚠️ Erreur impression auto:', printError);
+      showToast(`Commande ${response.numero} validée (erreur impression)`, 'warning');
+    }
+    
     currentCart = [];
     updateCartDisplay();
     
@@ -1200,7 +1201,7 @@ async function finalizeOrder(paymentMode) {
     document.getElementById('tableNumber').value = '';
     document.getElementById('orderType').value = 'sur_place';
     document.getElementById('orderType').dispatchEvent(new Event('change'));
-
+    
   } catch (error) {
     console.error('❌ Erreur création commande:', error);
     showToast('Erreur lors de la création de la commande', 'error');

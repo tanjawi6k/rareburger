@@ -501,11 +501,39 @@ async function deleteCommande() {
 }
 
 // ==========================================
-// Impression (endpoint non existant pour l'instant)
+// 🖨️ Impression du ticket
 // ==========================================
 async function printCommande() {
-  alert('Fonctionnalité d\'impression à implémenter');
-  // TODO: Créer l'endpoint /api/commandes/{id}/print dans Flask
+  const printBtn = document.getElementById('printBtn');
+  const originalText = printBtn.textContent;
+  
+  try {
+    printBtn.disabled = true;
+    printBtn.innerHTML = `
+      <span class="loading loading-spinner loading-sm"></span>
+      Impression en cours...
+    `;
+    
+    console.log('🖨️ Impression ticket:', commandeId);
+    
+    await api.print.printTicket(commandeId);
+    
+    console.log('✅ Ticket imprimé');
+    
+    printBtn.textContent = '✅ Imprimé !';
+    
+    setTimeout(() => {
+      printBtn.textContent = originalText;
+      printBtn.disabled = false;
+    }, 2000);
+    
+  } catch (error) {
+    console.error('❌ Erreur impression:', error);
+    alert(`Erreur lors de l'impression: ${error.message}`);
+    
+    printBtn.textContent = originalText;
+    printBtn.disabled = false;
+  }
 }
 
 // ==========================================
