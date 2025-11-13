@@ -131,54 +131,7 @@ const cartTotal = 0;
 </head>
 
 <body class="bg-base-200 min-h-screen">
-  
-  <!-- 🚧 MODAL MAINTENANCE (visible par défaut) -->
-  <dialog class="modal modal-open backdrop-blur-sm">
-    <div class="modal-box max-w-md text-center">
-      <!-- Logo ou icône -->
-      <div class="mb-6">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-20 w-20 mx-auto text-warning" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-        </svg>
-      </div>
-      
-      <!-- Message -->
-      <h2 class="text-2xl font-bold mb-4">Site en développement</h2>
-      <p class="text-base-content/70 mb-2">
-        Notre site est actuellement en cours de développement.
-      </p>
-      <p class="text-base-content/70 mb-6">
-        Nous serons bientôt de retour !
-      </p>
-      
-      <!-- Badge développeur -->
-      <div class="badge badge-primary badge-lg gap-2">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-        </svg>
-        Développé par NSMobile
-      </div>
-      
-      <!-- Optionnel : lien de contact -->
-      <div class="mt-6">
-        <a href="mailto:info@nsmobile.be" class="link link-primary text-sm">
-          Nous contacter
-        </a>
-      </div>
-    </div>
-    
-    <!-- Backdrop (arrière-plan) -->
-    <div class="modal-backdrop bg-black/60"></div>
-  </dialog>
-  
-  <!-- Le reste de ton code... -->
-  <div class="navbar-wrapper">
-    <Navbar 
-      cartItems={cartItems}
-      cartTotal={cartTotal}
-    />
-  </div>
-  <!-- etc... -->
+
 
 
   <!-- Navigation avec support safe-area -->
