@@ -294,6 +294,7 @@ const { id } = Astro.props;
         removable_ingredients: JSON.parse(productCard.dataset.productRemovableingredients || '[]'),
         allergenes: JSON.parse(productCard.dataset.productAllergenes || '[]'),
         category: productCard.dataset.category || '',
+        choices: JSON.parse(productCard.dataset.productChoices || '[]'),
       };
 
       console.log('✅ Données produit parsées:', data);
@@ -364,6 +365,51 @@ const { id } = Astro.props;
           </div>
         ` : ''}
       </div>
+
+      <!-- Choix obligatoires -->
+      ${data.choices && data.choices.length > 0 ? `
+        <div class="divider"></div>
+        <div>
+          <h4 class="font-bold mb-3 text-sm sm:text-base">Choix obligatoires</h4>
+          <div class="space-y-4">
+            ${data.choices.map(choice => `
+              <div>
+                <label class="label">
+                  <span class="label-text font-semibold">
+                    ${choice.label}
+                    ${choice.required ? '<span class="text-error ml-1">*</span>' : ''}
+                  </span>
+                </label>
+                <div class="space-y-2" id="choice-${productId}-${choice.id}">
+                  ${choice.options.map(option => `
+                    <label class="flex items-center justify-between cursor-pointer p-2 rounded hover:bg-base-200 active:bg-base-300">
+                      <div class="flex items-center gap-2">
+                        <input 
+                          type="radio" 
+                          name="choice-${productId}-${choice.id}" 
+                          class="radio radio-primary radio-sm choice-input" 
+                          data-choice-id="${choice.id}"
+                          data-choice-required="${choice.required}"
+                          data-option-id="${option.id}"
+                          data-option-name="${option.name}"
+                          data-price-modifier="${option.price_modifier}"
+                          onchange="updatePrice('${productId}')"
+                        />
+                        <span class="text-sm">${option.name}</span>
+                      </div>
+                      ${option.price_modifier !== 0 ? `
+                        <span class="badge badge-ghost badge-sm">
+                          ${option.price_modifier > 0 ? '+' : ''}${option.price_modifier.toFixed(2)}€
+                        </span>
+                      ` : ''}
+                    </label>
+                  `).join('')}
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      ` : ''}
 
       <div class="divider"></div>
 
@@ -489,6 +535,13 @@ const { id } = Astro.props;
     // Prix de base
     let totalPrice = productData.prix;
 
+    // ✅ AJOUTER : Prix des choix obligatoires
+    const choiceInputs = document.querySelectorAll(`.choice-input:checked`);
+    choiceInputs.forEach(input => {
+      const priceModifier = parseFloat(input.dataset.priceModifier || '0');
+      totalPrice += priceModifier;
+    });
+
     // Ajouter les suppléments sélectionnés
     const supplementCheckboxes = document.querySelectorAll(`#supplements-list-${productId} input[type="checkbox"]:checked`);
     supplementCheckboxes.forEach(checkbox => {
@@ -506,88 +559,117 @@ const { id } = Astro.props;
     }
   };
 
-  // Fonction pour ajouter au panier
-  window.addToCart = function(productId) {
-    if (!productData) return;
+// Fonction pour ajouter au panier
+window.addToCart = function(productId) {
+  if (!productData) return;
 
-    const quantityInput = document.getElementById(`quantity-${productId}`);
-    const quantity = parseInt(quantityInput?.value || '1');
-
-    // Récupérer les suppléments sélectionnés
-    const selectedSupps = [];
-    const supplementCheckboxes = document.querySelectorAll(`#supplements-list-${productId} input[type="checkbox"]:checked`);
-    supplementCheckboxes.forEach(checkbox => {
-      const suppId = checkbox.dataset.supplementId;
-      const supp = window.allSupplements?.find(s => s.id === suppId);
-      if (supp) {
-        selectedSupps.push(supp);
-      }
-    });
-    
-    // Récupérer les ingrédients retirés
-    const removedIngr = [];
-    const removableCheckboxes = document.querySelectorAll(`#removable-list-${productId} input[type="checkbox"]:checked`);
-    removableCheckboxes.forEach(checkbox => {
-      const ingredient = checkbox.dataset.removableIngredient;
-      if (ingredient) {
-        removedIngr.push(ingredient);
-      }
-    });
-
-    console.log('🛒 Ajout au panier:', {
-      product: productData.nom,
-      supplements: selectedSupps,
-      removedIngredients: removedIngr,
-      quantity
-    });
-
-    // Calculer le prix unitaire
-    let unitPrice = productData.prix;
-    selectedSupps.forEach(supp => {
-      unitPrice += supp.price;
-    });
-
-    // Créer l'objet article
-    const article = {
-      id: productData.id,
-      nom: productData.nom,
-      prix: unitPrice,
-      quantite: quantity,
-      supplements: selectedSupps,
-      removed_ingredients: removedIngr,
-    };
-
-    // Récupérer le panier
-    const cart = JSON.parse(localStorage.getItem('cart') || '[]');
-
-    // Vérifier si le produit existe déjà (avec les mêmes suppléments ET ingrédients retirés)
-    const existingIndex = cart.findIndex(item => 
-      item.id === article.id && 
-      JSON.stringify(item.supplements) === JSON.stringify(article.supplements) &&
-      JSON.stringify(item.removed_ingredients) === JSON.stringify(article.removed_ingredients)
-    );
-
-    if (existingIndex >= 0) {
-      // Augmenter la quantité
-      cart[existingIndex].quantite += article.quantite;
-    } else {
-      // Ajouter nouveau
-      cart.push(article);
+  // ✅ AJOUTER : Validation des choix obligatoires
+  const requiredChoices = productData.choices?.filter(c => c.required) || [];
+  const missingChoices = [];
+  
+  for (const choice of requiredChoices) {
+    const selected = document.querySelector(`input[name="choice-${productId}-${choice.id}"]:checked`);
+    if (!selected) {
+      missingChoices.push(choice.label);
     }
+  }
+  
+  if (missingChoices.length > 0) {
+    alert('⚠️ Veuillez sélectionner : ' + missingChoices.join(', '));
+    return;
+  }
 
-    // Sauvegarder
-    localStorage.setItem('cart', JSON.stringify(cart));
-    
-    // Émettre événement pour mettre à jour le badge
-    window.dispatchEvent(new Event('cart-updated'));
-    
-    // Toast de confirmation (optionnel)
-    console.log('✅ Produit ajouté au panier');
+  const quantityInput = document.getElementById(`quantity-${productId}`);
+  const quantity = parseInt(quantityInput?.value || '1');
 
-    // Fermer le modal
-    const modal = document.getElementById(`modal-${productId}`);
-    if (modal) {
-      modal.close();
+  // ✅ AJOUTER : Récupérer les choix sélectionnés
+  const selectedChoices = [];
+  const choiceInputs = document.querySelectorAll(`.choice-input:checked`);
+  choiceInputs.forEach(input => {
+    selectedChoices.push({
+      choice_id: input.dataset.choiceId,
+      option_id: input.dataset.optionId,
+      option_name: input.dataset.optionName,
+      price_modifier: parseFloat(input.dataset.priceModifier || '0')
+    });
+  });
+
+  // Récupérer les suppléments sélectionnés
+  const selectedSupps = [];
+  const supplementCheckboxes = document.querySelectorAll(`#supplements-list-${productId} input[type="checkbox"]:checked`);
+  supplementCheckboxes.forEach(checkbox => {
+    const suppId = checkbox.dataset.supplementId;
+    const supp = window.allSupplements?.find(s => s.id === suppId);
+    if (supp) {
+      selectedSupps.push(supp);
     }
+  });
+  
+  // Récupérer les ingrédients retirés
+  const removedIngr = [];
+  const removableCheckboxes = document.querySelectorAll(`#removable-list-${productId} input[type="checkbox"]:checked`);
+  removableCheckboxes.forEach(checkbox => {
+    const ingredient = checkbox.dataset.removableIngredient;
+    if (ingredient) {
+      removedIngr.push(ingredient);
+    }
+  });
+
+  console.log('🛒 Ajout au panier:', {
+    product: productData.nom,
+    choices: selectedChoices,
+    supplements: selectedSupps,
+    removedIngredients: removedIngr,
+    quantity
+  });
+
+  // Calculer le prix unitaire
+  let unitPrice = productData.prix;
+  
+  // ✅ AJOUTER : Prix des choix
+  selectedChoices.forEach(choice => {
+    unitPrice += choice.price_modifier;
+  });
+  
+  selectedSupps.forEach(supp => {
+    unitPrice += supp.price;
+  });
+
+  // Créer l'objet article
+  const article = {
+    id: productData.id,
+    nom: productData.nom,
+    prix: unitPrice,
+    quantite: quantity,
+    choices_selected: selectedChoices, // ✅ AJOUTER
+    supplements: selectedSupps,
+    removed_ingredients: removedIngr,
   };
+
+  // Récupérer le panier
+  const cart = JSON.parse(localStorage.getItem('cart') || '[]');
+
+  // ✅ MODIFIER : Vérifier avec les choix aussi
+  const existingIndex = cart.findIndex(item => 
+    item.id === article.id && 
+    JSON.stringify(item.choices_selected) === JSON.stringify(article.choices_selected) &&
+    JSON.stringify(item.supplements) === JSON.stringify(article.supplements) &&
+    JSON.stringify(item.removed_ingredients) === JSON.stringify(article.removed_ingredients)
+  );
+
+  if (existingIndex >= 0) {
+    cart[existingIndex].quantite += article.quantite;
+  } else {
+    cart.push(article);
+  }
+
+  localStorage.setItem('cart', JSON.stringify(cart));
+  window.dispatchEvent(new Event('cart-updated'));
+  console.log('✅ Produit ajouté au panier');
+
+  const modal = document.getElementById(`modal-${productId}`);
+  if (modal) {
+    modal.close();
+  }
+};
 </script>

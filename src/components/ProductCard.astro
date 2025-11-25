@@ -20,6 +20,7 @@ interface Props {
   supplements?: string[];
   allergenes?: string[];
   removable_ingredients?: string[];
+  choices?: any[];
 }
 
 const {
@@ -35,6 +36,7 @@ const {
   supplements = [],
   allergenes = [],
   removable_ingredients = [],
+  choices = [],
 } = Astro.props;
 
 // Image par défaut si non fournie
@@ -67,6 +69,8 @@ const formatPrice = (price: number) => {
   data-product-removableingredients={JSON.stringify(removable_ingredients)}
   data-product-allergenes={JSON.stringify(allergenes)}
   data-category={category}
+  data-product-choices={JSON.stringify(choices || [])}
+
 >
   <!-- Image avec badges -->
   <figure class="relative">
