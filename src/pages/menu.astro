@@ -1,9 +1,5 @@
 ---
 // src/pages/menu.astro
-// ============================================
-// 🍽️ CMDOLA - Page Menu Complète
-// ============================================
-
 import Navbar from '../components/Navbar.astro';
 import CategorySelector from '../components/CategorySelector.astro';
 import ProductGrid from '../components/ProductGrid.astro';
@@ -132,6 +128,118 @@ const cartTotal = 0;
 
 <body class="bg-base-200 min-h-screen">
 
+<!-- 🚧 MODAL MAINTENANCE (visible par défaut) -->
+
+
+  <dialog class="modal modal-open backdrop-blur-sm">
+
+
+    <div class="modal-box max-w-md text-center">
+
+
+      <!-- Logo ou icône -->
+
+
+      <div class="mb-6">
+
+
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-20 w-20 mx-auto text-warning" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+
+
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+
+
+        </svg>
+
+
+      </div>
+
+
+      
+
+
+      <!-- Message -->
+
+
+      <h2 class="text-2xl font-bold mb-4">Plateforme en développement</h2>
+
+
+      <p class="text-base-content/70 mb-2">
+
+
+        Cette plateforme est actuellement en cours de développement.
+
+
+      </p>
+
+
+      <p class="text-base-content/70 mb-6">
+
+
+        Contacter nous directement par téléphone au <br>0470 18 42 42
+
+
+      </p>
+
+
+      
+
+
+      <!-- Badge développeur -->
+
+
+      <div class="badge badge-primary badge-lg gap-2">
+
+
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+
+
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+
+
+        </svg>
+
+
+        Développé par NSMobile
+
+
+      </div>
+
+
+      
+
+
+      <!-- Optionnel : lien de contact -->
+
+
+      <div class="mt-6">
+
+
+        <a href="tel:+32470184242" class="link link-primary text-sm">
+
+
+          Nous contacter
+
+
+        </a>
+
+
+      </div>
+
+
+    </div>
+
+
+    
+
+
+    <!-- Backdrop (arrière-plan) -->
+
+
+    <div class="modal-backdrop bg-black/60"></div>
+
+
+  </dialog>
 
   <!-- Navigation avec support safe-area -->
   <div class="navbar-wrapper">
@@ -384,8 +492,12 @@ const cartTotal = 0;
 
 <script define:vars={{ isOpen: isOpen, config }}>
   // ============================================
-  // 🎯 Script consolidé - Panier + Auto-refresh
+  // 🎯 Script intelligent - Sans rechargement intempestif
   // ============================================
+  
+  let lastActivity = Date.now();
+  let modalIsOpen = false;
+  let pollingInterval = null;
   
   // Mise à jour du badge panier
   function updateCartBadge() {
@@ -414,40 +526,193 @@ const cartTotal = 0;
     }
   }
 
-  // ✅ Fonction de vérification du statut ouvert/fermé
-  function checkOpenStatus() {
-    const now = new Date();
-    const belgianTime = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Brussels' }));
-    
-    const dayNames = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
-    const currentDay = dayNames[belgianTime.getDay()];
-    const currentTime = `${String(belgianTime.getHours()).padStart(2, '0')}:${String(belgianTime.getMinutes()).padStart(2, '0')}`;
-    
-    const currentSchedule = config.horaires?.[currentDay] || [];
-    
-    function timeToMinutes(time) {
-      const [hours, minutes] = time.split(':').map(Number);
-      return hours * 60 + minutes;
-    }
-    
-    const currentMinutes = timeToMinutes(currentTime);
-    
-    const nowOpen = currentSchedule.some((plage) => {
-      const debutMinutes = timeToMinutes(plage.debut);
-      const finMinutes = timeToMinutes(plage.fin);
+  // ✅ NOUVEAU : Détecter si modal ouvert
+  function checkIfModalOpen() {
+    const openModals = document.querySelectorAll('dialog[open]');
+    modalIsOpen = openModals.length > 0;
+    return modalIsOpen;
+  }
+
+  // ✅ NOUVEAU : Détecter si panier vide
+  function isCartEmpty() {
+    const cart = JSON.parse(localStorage.getItem('cart') || '[]');
+    return cart.length === 0;
+  }
+
+  // ✅ NOUVEAU : Détecter inactivité (pas d'interaction depuis X secondes)
+  function isUserInactive() {
+    const inactiveThreshold = 30000; // 30 secondes
+    return (Date.now() - lastActivity) > inactiveThreshold;
+  }
+
+  // ✅ NOUVEAU : Conditions de sécurité avant refresh
+  function canSafelyRefresh() {
+    return !checkIfModalOpen() && isCartEmpty() && isUserInactive();
+  }
+
+  // ✅ NOUVEAU : Vérifier le statut SANS recharger
+  async function checkStatusInBackground() {
+    try {
+      const response = await fetch('/api/config');
+      const config = await response.json();
       
-      if (finMinutes < debutMinutes) {
-        return currentMinutes >= debutMinutes || currentMinutes <= finMinutes;
-      } else {
-        return currentMinutes >= debutMinutes && currentMinutes <= finMinutes;
+      const now = new Date();
+      const belgianTime = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Brussels' }));
+      
+      const dayNames = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
+      const currentDay = dayNames[belgianTime.getDay()];
+      const currentTime = `${String(belgianTime.getHours()).padStart(2, '0')}:${String(belgianTime.getMinutes()).padStart(2, '0')}`;
+      
+      const currentSchedule = config.horaires?.[currentDay] || [];
+      
+      function timeToMinutes(time) {
+        const [hours, minutes] = time.split(':').map(Number);
+        return hours * 60 + minutes;
       }
-    });
-    
-    // Si le statut a changé, recharger la page
-    if (nowOpen !== isOpen) {
-      console.log('🔄 Statut changé, rechargement...');
-      window.location.reload();
+      
+      const currentMinutes = timeToMinutes(currentTime);
+      
+      const nowOpen = currentSchedule.some((plage) => {
+        const debutMinutes = timeToMinutes(plage.debut);
+        const finMinutes = timeToMinutes(plage.fin);
+        
+        if (finMinutes < debutMinutes) {
+          return currentMinutes >= debutMinutes || currentMinutes <= finMinutes;
+        } else {
+          return currentMinutes >= debutMinutes && currentMinutes <= finMinutes;
+        }
+      });
+      
+      // Si le statut a changé
+      if (nowOpen !== isOpen) {
+        console.log('🔄 Statut changé:', nowOpen ? 'OUVERT' : 'FERMÉ');
+        
+        // ✅ Si on PEUT recharger en sécurité
+        if (canSafelyRefresh()) {
+          console.log('✅ Rechargement sécurisé');
+          window.location.reload();
+        } else {
+          // ✅ Sinon, afficher un toast "Mise à jour disponible"
+          showUpdateToast(nowOpen);
+        }
+      }
+      
+    } catch (error) {
+      console.error('❌ Erreur vérification statut:', error);
     }
+  }
+
+  // ✅ NOUVEAU : Toast pour mise à jour disponible
+  function showUpdateToast(nowOpen) {
+    const toastContainer = document.getElementById('toast-container');
+    if (!toastContainer) return;
+    
+    // Éviter les doublons
+    if (document.getElementById('update-toast')) return;
+    
+    const toast = document.createElement('div');
+    toast.id = 'update-toast';
+    toast.className = 'alert alert-info shadow-lg mb-2';
+    toast.innerHTML = `
+      <div>
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <div>
+          <h3 class="font-bold">${nowOpen ? 'Restaurant ouvert !' : 'Restaurant fermé'}</h3>
+          <div class="text-xs">Le statut a changé</div>
+        </div>
+      </div>
+      <button class="btn btn-sm btn-primary" onclick="window.location.reload()">
+        Actualiser
+      </button>
+      <button class="btn btn-sm btn-ghost" onclick="document.getElementById('update-toast').remove()">
+        ✕
+      </button>
+    `;
+    
+    toastContainer.appendChild(toast);
+    
+    // Auto-supprimer après 30 secondes
+    setTimeout(() => {
+      if (document.getElementById('update-toast')) {
+        document.getElementById('update-toast').remove();
+      }
+    }, 30000);
+  }
+
+  // ✅ NOUVEAU : Vérifier disponibilité des produits en arrière-plan
+  async function checkProductAvailability() {
+    try {
+      const response = await fetch('/api/menu');
+      const menu = await response.json();
+      const products = menu.produits || [];
+      
+      // Comparer avec les produits affichés
+      let hasChanges = false;
+      
+      products.forEach(product => {
+        const card = document.querySelector(`[data-product-id="${product.id}"]`);
+        if (card) {
+          const currentDisponible = card.querySelector('.btn-primary') !== null;
+          
+          // Si la disponibilité a changé
+          if (product.disponible !== currentDisponible) {
+            hasChanges = true;
+            
+            // Mettre à jour visuellement
+            if (!product.disponible) {
+              // Produit devient indisponible
+              const btn = card.querySelector('button');
+              if (btn) {
+                btn.classList.remove('btn-primary');
+                btn.classList.add('btn-disabled');
+                btn.disabled = true;
+                btn.textContent = 'Victime de son succès';
+              }
+              
+              // Ajouter badge
+              const figure = card.querySelector('figure');
+              if (figure && !figure.querySelector('.badge-error')) {
+                const badge = document.createElement('div');
+                badge.className = 'badge badge-error absolute top-2 right-2';
+                badge.textContent = 'Victime de son succès';
+                figure.appendChild(badge);
+              }
+            }
+          }
+        }
+      });
+      
+      // Si des produits ont changé, notifier
+      if (hasChanges) {
+        showProductUpdateToast();
+      }
+      
+    } catch (error) {
+      console.error('❌ Erreur vérification produits:', error);
+    }
+  }
+
+  // ✅ NOUVEAU : Toast pour mise à jour produits
+  function showProductUpdateToast() {
+    const toastContainer = document.getElementById('toast-container');
+    if (!toastContainer) return;
+    
+    const toast = document.createElement('div');
+    toast.className = 'alert alert-warning shadow-lg mb-2';
+    toast.innerHTML = `
+      <div>
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+        </svg>
+        <span>Certains produits ont été mis à jour</span>
+      </div>
+    `;
+    
+    toastContainer.appendChild(toast);
+    
+    setTimeout(() => toast.remove(), 8000);
   }
 
   // ✅ Bloquer les commandes si restaurant fermé
@@ -462,7 +727,6 @@ const cartTotal = 0;
         }
       });
       
-      // Bloquer l'ouverture du modal
       const originalOpenModal = window.openProductModal;
       if (originalOpenModal) {
         window.openProductModal = function() {
@@ -472,17 +736,25 @@ const cartTotal = 0;
     }
   }
 
+  // ✅ Détecter activité utilisateur
+  function trackActivity() {
+    lastActivity = Date.now();
+  }
+
+  // Écouter les interactions
+  ['mousedown', 'keydown', 'scroll', 'touchstart'].forEach(event => {
+    document.addEventListener(event, trackActivity, { passive: true });
+  });
+
   // ============================================
   // 📱 OPTIMISATIONS MOBILE
   // ============================================
   
-  // Détecter et gérer la hauteur de la barre d'adresse mobile
   function setViewportHeight() {
     const vh = window.innerHeight * 0.01;
     document.documentElement.style.setProperty('--vh', `${vh}px`);
   }
 
-  // Au chargement et au resize
   window.addEventListener('resize', setViewportHeight);
   window.addEventListener('orientationchange', setViewportHeight);
 
@@ -491,11 +763,20 @@ const cartTotal = 0;
     updateCartBadge();
     updateButtonsState();
     setViewportHeight();
+    
+    // ✅ Démarrer le polling intelligent
+    if (pollingInterval) clearInterval(pollingInterval);
+    
+    // Vérifier le statut toutes les 2 minutes
+    pollingInterval = setInterval(() => {
+      checkStatusInBackground();
+    }, 120000); // 2 minutes
+    
+    // Vérifier les produits toutes les 3 minutes
+    setInterval(() => {
+      checkProductAvailability();
+    }, 180000); // 3 minutes
   });
 
-  // Écouter les mises à jour du panier
   window.addEventListener('cart-updated', updateCartBadge);
-
-  // ✅ Auto-refresh toutes les minutes pour vérifier le statut
-  setInterval(checkOpenStatus, 60000); // 60 secondes
 </script>

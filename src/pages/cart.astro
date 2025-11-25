@@ -228,6 +228,19 @@ try {
             <!-- Infos produit -->
             <div class="flex-1">
               <h3 class="font-bold text-lg">${escapeHtml(item.nom)}</h3>
+
+
+              <!-- ✅ AJOUTER : Choix sélectionnés -->
+              ${item.choices_selected && item.choices_selected.length > 0 ? `
+                <div class="flex flex-wrap gap-2 mt-2">
+                  ${item.choices_selected.map(choice => `
+                    <span class="badge badge-primary badge-sm">
+                      ${escapeHtml(choice.option_name)}
+                      ${choice.price_modifier !== 0 ? ` (+${choice.price_modifier.toFixed(2)}€)` : ''}
+                    </span>
+                  `).join('')}
+                </div>
+              ` : ''}
               
               <!-- Suppléments -->
               ${item.supplements && item.supplements.length > 0 ? `

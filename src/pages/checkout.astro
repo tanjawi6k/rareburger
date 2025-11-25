@@ -498,19 +498,52 @@ function updateSummary() {
   const subtotal = cart.reduce((sum, item) => sum + (item.prix * item.quantite), 0);
   const itemsCount = cart.reduce((sum, item) => sum + item.quantite, 0);
   
-  // Afficher la liste des articles
+  // Afficher la liste des articles avec détails
   const itemsList = document.getElementById('summary-items-list');
-  itemsList.innerHTML = cart.map(item => `
-    <div class="flex justify-between text-sm">
-      <span>${item.quantite}x ${item.nom}</span>
-      <span class="font-semibold">${formatPrice(item.prix * item.quantite)}</span>
-    </div>
-  `).join('');
+  itemsList.innerHTML = cart.map(item => {
+    // Construire les détails (choices + suppléments + sans)
+    const details = [];
+    
+    // ✅ Ajouter les choix
+    if (item.choices_selected && item.choices_selected.length > 0) {
+      item.choices_selected.forEach(choice => {
+        details.push(`• ${choice.option_name}`);
+      });
+    }
+    
+    // Ajouter les suppléments
+    if (item.supplements && item.supplements.length > 0) {
+      item.supplements.forEach(supp => {
+        details.push(`+ ${supp.name}`);
+      });
+    }
+    
+    // Ajouter les ingrédients retirés
+    if (item.removed_ingredients && item.removed_ingredients.length > 0) {
+      details.push(`Sans: ${item.removed_ingredients.join(', ')}`);
+    }
+    
+    const detailsHtml = details.length > 0 
+      ? `<div class="text-xs text-base-content/60 mt-0.5">${details.join(' ')}</div>` 
+      : '';
+    
+    return `
+      <div class="pb-2 mb-2 border-b border-base-300 last:border-0">
+        <div class="flex justify-between text-sm">
+          <div class="flex-1">
+            <div class="font-medium">${item.quantite}x ${item.nom}</div>
+            ${detailsHtml}
+          </div>
+          <span class="font-semibold ml-2">${formatPrice(item.prix * item.quantite)}</span>
+        </div>
+      </div>
+    `;
+  }).join('');
   
   document.getElementById('summary-items-count').textContent = itemsCount;
   document.getElementById('summary-subtotal').textContent = formatPrice(subtotal);
   
-  // Frais de livraison
+  // Frais de livraison (reste inchangé)
   let deliveryFees = 0;
   if (selectedMode === 'livraison' && selectedZone) {
     deliveryFees = selectedZone.frais;
@@ -524,6 +557,8 @@ function updateSummary() {
   const total = subtotal + deliveryFees;
   document.getElementById('summary-total').textContent = formatPrice(total);
 }
+
+
 
 // ==========================================
 // Navigation entre Étapes
@@ -548,6 +583,9 @@ function showStep(step) {
   currentStep = step;
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
+
+
+
 
 // ==========================================
 // Étape 1 : Mode de Service
