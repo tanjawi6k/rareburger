@@ -20,7 +20,6 @@ import api from '../lib/api';
 let restaurantName = 'POS';
 let logoUrl        = '/favicon.ico';
 let theme          = 'dark';
-let notifAudio: HTMLAudioElement | null = null;
 
 const VALID_THEMES: readonly string[] = [
   'light','dark','cupcake','bumblebee','emerald','corporate',
@@ -580,6 +579,7 @@ const posUser = { name: user.name, role: user.roles[0] };
   let audioUnlocked = false;
   let lastCommandesIds = new Set<string>();
   let pollTimer: ReturnType<typeof setInterval> | null = null;
+  let notifAudio: HTMLAudioElement | null = null;
 
   // ── Helpers ───────────────────────────────────
   function getApiBase() {
