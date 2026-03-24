@@ -1,300 +1,258 @@
 ---
 // src/pages/contact.astro
-// ============================================
-// 📧 CMDOLA - Page Contact
-// ============================================
-
 import Navbar from '../components/Navbar.astro';
+import api from '../lib/api';
 import '../assets/app.css';
 
-// ❌ SUPPRIMÉ: Plus besoin de ces variables
-// const restaurantId = import.meta.env.PUBLIC_DEFAULT_RESTAURANT_ID || 'rare-burger';
-// const apiBaseUrl = import.meta.env.PUBLIC_API_URL || 'https://api.cmdola.be/api';
+// ─────────────────────────────────────────
+// Thème SSR
+// ─────────────────────────────────────────
+const VALID_THEMES: readonly string[] = [
+  'light','dark','cupcake','bumblebee','emerald','corporate',
+  'synthwave','retro','cyberpunk','valentine','halloween','garden',
+  'forest','aqua','lofi','pastel','fantasy','wireframe','black',
+  'luxury','dracula','cmyk','autumn','business','acid','lemonade',
+  'night','coffee','winter','dim','nord','sunset',
+];
+const cookieTheme = Astro.cookies.get('theme')?.value;
+
+// ─────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────
+interface TimeSlot { debut: string; fin: string; }
+
+// ─────────────────────────────────────────
+// Données SSR
+// ─────────────────────────────────────────
+let theme          = 'light';
+let logoUrl        = '/favicon.ico';
+let restaurantName = 'Restaurant';
+let description    = '';
+let adresse        = '';
+let telephone      = '';
+let email          = '';
+let tva            = '';
+let facebook       = '';
+let instagram      = '';
+let twitter        = '';
+let horaires: Record<string, TimeSlot[]> = {};
+
+try {
+  const cfg = await api.config.get() as Record<string, any>;
+
+  const configTheme = (cfg.theme as Record<string,string>|undefined)?.daisy;
+  theme = (cookieTheme && VALID_THEMES.includes(cookieTheme))
+    ? cookieTheme
+    : (configTheme && VALID_THEMES.includes(configTheme) ? configTheme : 'light');
+
+  const logoFile = (cfg.theme as Record<string,string>|undefined)?.logo;
+  logoUrl        = logoFile ? api.images.getUrl(logoFile) : '/favicon.ico';
+
+  restaurantName = (cfg.nom         as string|undefined) ?? 'Restaurant';
+  description    = (cfg.description as string|undefined) ?? '';
+  adresse        = (cfg.adresse     as string|undefined) ?? '';
+  telephone      = (cfg.telephone   as string|undefined) ?? '';
+  email          = (cfg.email       as string|undefined) ?? '';
+  tva            = (cfg.tva         as string|undefined) ?? '';
+
+  const rs = cfg.reseaux_sociaux as Record<string,string>|undefined ?? {};
+  facebook  = rs.facebook  ?? '';
+  instagram = rs.instagram ?? '';
+  twitter   = rs.twitter   ?? '';
+
+  horaires = (cfg.horaires as Record<string,TimeSlot[]>|undefined) ?? {};
+} catch { /* thème par défaut */ }
+
+const JOURS: { key: string; label: string }[] = [
+  { key: 'lundi',    label: 'Lundi'    },
+  { key: 'mardi',    label: 'Mardi'    },
+  { key: 'mercredi', label: 'Mercredi' },
+  { key: 'jeudi',    label: 'Jeudi'    },
+  { key: 'vendredi', label: 'Vendredi' },
+  { key: 'samedi',   label: 'Samedi'   },
+  { key: 'dimanche', label: 'Dimanche' },
+];
+
+const hasReseaux = !!(facebook || instagram || twitter);
 ---
 
 <!DOCTYPE html>
-<html lang="fr" >
+<html lang="fr" data-theme={theme}>
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="robots" content="noindex, nofollow" />
-  <title>Contact - CMDOLA</title>
-  <link rel="icon" type="image/png" href="/favicon.ico" id="favicon">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Contact — {restaurantName}</title>
+  <link rel="icon" type="image/png" href={logoUrl} />
+
+  <!-- Anti-FOUC thème -->
+  <script is:inline>
+    (function(){
+      var v=['light','dark','cupcake','bumblebee','emerald','corporate','synthwave','retro',
+        'cyberpunk','valentine','halloween','garden','forest','aqua','lofi','pastel','fantasy',
+        'wireframe','black','luxury','dracula','cmyk','autumn','business','acid','lemonade',
+        'night','coffee','winter','dim','nord','sunset'];
+      var c=document.cookie.split(';').find(function(x){return x.trim().startsWith('theme=');});
+      var t=c?decodeURIComponent(c.split('=')[1].trim()):null;
+      if(t&&v.indexOf(t)!==-1) document.documentElement.setAttribute('data-theme',t);
+    }());
+  </script>
 </head>
 
 <body class="bg-base-200 min-h-screen">
-  
-  <Navbar />
-  
-  <div class="container mx-auto px-4 py-8">
-    
+
+  <Navbar restaurantName={restaurantName} logoUrl={logoUrl} activePage="contact" />
+
+  <main class="container mx-auto px-4 py-8 max-w-5xl">
+
     <h1 class="text-3xl font-bold mb-6">Nous contacter</h1>
 
     <div class="grid lg:grid-cols-2 gap-6">
-      
-      <!-- Informations générales -->
-      <div class="space-y-6">
-        
+
+      <!-- Colonne gauche -->
+      <div class="space-y-5">
+
         <!-- Présentation -->
-        <div class="card bg-base-100 shadow-sm">
-          <div class="card-body">
-            <h2 class="card-title" id="restaurant-name">Chargement...</h2>
-            <p class="text-base-content/70" id="restaurant-description"></p>
+        {(restaurantName || description) && (
+          <div class="card bg-base-100 shadow-sm">
+            <div class="card-body">
+              <h2 class="card-title">{restaurantName}</h2>
+              {description && <p class="text-base-content/70">{description}</p>}
+            </div>
           </div>
-        </div>
+        )}
 
         <!-- Coordonnées -->
         <div class="card bg-base-100 shadow-sm">
           <div class="card-body">
-            <h2 class="card-title">Coordonnées</h2>
-            <div class="divider my-2"></div>
-            
-            <div class="space-y-4" id="coordonnees-container">
-              <!-- Rempli par JS -->
-            </div>
+            <h2 class="card-title mb-2">Coordonnées</h2>
+            <div class="divider my-0 mb-3"></div>
+            <ul class="space-y-4">
+
+              {adresse && (
+                <li class="flex items-start gap-3">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0 mt-0.5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+                  </svg>
+                  <div>
+                    <p class="font-semibold text-sm">Adresse</p>
+                    <p class="text-base-content/70 text-sm">{adresse}</p>
+                  </div>
+                </li>
+              )}
+
+              {telephone && (
+                <li class="flex items-start gap-3">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0 mt-0.5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
+                  </svg>
+                  <div>
+                    <p class="font-semibold text-sm">Téléphone</p>
+                    <a href={`tel:${telephone.replace(/\s/g,'')}`} class="link link-primary text-sm">{telephone}</a>
+                  </div>
+                </li>
+              )}
+
+              {email && (
+                <li class="flex items-start gap-3">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0 mt-0.5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                  </svg>
+                  <div>
+                    <p class="font-semibold text-sm">Email</p>
+                    <a href={`mailto:${email}`} class="link link-primary text-sm">{email}</a>
+                  </div>
+                </li>
+              )}
+
+              {tva && (
+                <li class="flex items-start gap-3">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0 mt-0.5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                  </svg>
+                  <div>
+                    <p class="font-semibold text-sm">N° TVA</p>
+                    <p class="text-base-content/70 text-sm">{tva}</p>
+                  </div>
+                </li>
+              )}
+
+              {!adresse && !telephone && !email && !tva && (
+                <li class="text-base-content/50 text-sm">Aucune coordonnée renseignée</li>
+              )}
+            </ul>
           </div>
         </div>
 
         <!-- Réseaux sociaux -->
-        <div class="card bg-base-100 shadow-sm" id="reseaux-card" style="display: none;">
-          <div class="card-body">
-            <h2 class="card-title">Réseaux sociaux</h2>
-            <div class="divider my-2"></div>
-            
-            <div class="flex gap-4" id="reseaux-container">
-              <!-- Rempli par JS -->
+        {hasReseaux && (
+          <div class="card bg-base-100 shadow-sm">
+            <div class="card-body">
+              <h2 class="card-title mb-2">Réseaux sociaux</h2>
+              <div class="divider my-0 mb-3"></div>
+              <div class="flex gap-3 flex-wrap">
+
+                {facebook && (
+                  <a href={facebook} target="_blank" rel="noopener noreferrer"
+                    class="btn btn-circle btn-outline" aria-label="Facebook">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M9 8h-3v4h3v12h5v-12h3.642l.358-4h-4v-1.667c0-.955.192-1.333 1.115-1.333h2.885v-5h-3.808c-3.596 0-5.192 1.583-5.192 4.615v3.385z"/>
+                    </svg>
+                  </a>
+                )}
+
+                {instagram && (
+                  <a href={instagram} target="_blank" rel="noopener noreferrer"
+                    class="btn btn-circle btn-outline" aria-label="Instagram">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
+                    </svg>
+                  </a>
+                )}
+
+                {twitter && (
+                  <a href={twitter} target="_blank" rel="noopener noreferrer"
+                    class="btn btn-circle btn-outline" aria-label="Twitter / X">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+                    </svg>
+                  </a>
+                )}
+
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
       </div>
 
-      <!-- Horaires d'ouverture -->
-      <div class="card bg-base-100 shadow-sm">
+      <!-- Horaires -->
+      <div class="card bg-base-100 shadow-sm h-fit">
         <div class="card-body">
-          <h2 class="card-title">Horaires d'ouverture</h2>
-          <div class="divider my-2"></div>
-          
-          <div class="space-y-3" id="horaires-container">
-            <!-- Rempli par JS -->
-          </div>
+          <h2 class="card-title mb-2">Horaires d'ouverture</h2>
+          <div class="divider my-0 mb-3"></div>
+          <ul class="space-y-1">
+            {JOURS.map(({ key, label }) => {
+              const slots = horaires[key] ?? [];
+              const isOpen = slots.length > 0;
+              const horairesText = slots.map(s => `${s.debut} – ${s.fin}`).join(' · ');
+              return (
+                <li class="flex justify-between items-center py-2 border-b border-base-200 last:border-0 gap-3">
+                  <span class="font-semibold text-sm">{label}</span>
+                  {isOpen
+                    ? <span class="text-sm text-base-content/70 text-right">{horairesText}</span>
+                    : <span class="badge badge-ghost badge-sm">Fermé</span>
+                  }
+                </li>
+              );
+            })}
+          </ul>
         </div>
       </div>
 
     </div>
-  </div>
+
+  </main>
 
 </body>
 </html>
-
-<script>
-  // ✅ Importer api.ts côté client
-  import api from '../lib/api';
-
-  // Charger la configuration complète
-  async function loadConfig() {
-    try {
-      // ✅ Utiliser api.ts au lieu de fetch direct
-      const config = await api.config.get();
-      
-      // Appliquer le thème DaisyUI
-      if (config.theme?.daisy) {
-        document.documentElement.setAttribute('data-theme', config.theme.daisy);
-      }
-      
-      // ✅ Utiliser le helper pour l'URL de l'image
-      if (config.theme?.logo) {
-        const logoUrl = api.images.getUrl(config.theme.logo);
-        const favicon = document.getElementById('favicon');
-        if (favicon) favicon.href = logoUrl;
-      }
-
-      // Afficher les informations
-      displayRestaurantInfo(config);
-      displayCoordonnees(config);
-      displayHoraires(config.horaires || {});
-      displayReseaux(config.reseaux_sociaux || {});
-      
-    } catch (error) {
-      console.error('❌ Erreur config:', error);
-      // Thème par défaut en cas d'erreur
-      document.documentElement.setAttribute('data-theme', 'autumn');
-    }
-  }
-
-  function displayRestaurantInfo(config) {
-    const nameEl = document.getElementById('restaurant-name');
-    const descEl = document.getElementById('restaurant-description');
-    
-    if (nameEl) nameEl.textContent = config.nom || 'Restaurant';
-    if (descEl) descEl.textContent = config.description || '';
-  }
-
-  function displayCoordonnees(config) {
-    const container = document.getElementById('coordonnees-container');
-    if (!container) return;
-
-    let html = '';
-
-    // Adresse
-    if (config.adresse) {
-      html += `
-        <div class="flex items-start gap-3">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 shrink-0 mt-1 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
-          <div>
-            <p class="font-semibold">Adresse</p>
-            <p class="text-base-content/70">${config.adresse}</p>
-          </div>
-        </div>
-      `;
-    }
-
-    // Téléphone
-    if (config.telephone) {
-      html += `
-        <div class="flex items-start gap-3">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 shrink-0 mt-1 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-          </svg>
-          <div>
-            <p class="font-semibold">Téléphone</p>
-            <a href="tel:${config.telephone}" class="link link-primary">${config.telephone}</a>
-          </div>
-        </div>
-      `;
-    }
-
-    // Email
-    if (config.email) {
-      html += `
-        <div class="flex items-start gap-3">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 shrink-0 mt-1 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-          </svg>
-          <div>
-            <p class="font-semibold">Email</p>
-            <a href="mailto:${config.email}" class="link link-primary">${config.email}</a>
-          </div>
-        </div>
-      `;
-    }
-
-    // TVA
-    if (config.tva) {
-      html += `
-        <div class="flex items-start gap-3">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 shrink-0 mt-1 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
-          <div>
-            <p class="font-semibold">N° TVA</p>
-            <p class="text-base-content/70">${config.tva}</p>
-          </div>
-        </div>
-      `;
-    }
-
-    container.innerHTML = html;
-  }
-
-  function displayHoraires(horaires) {
-    const container = document.getElementById('horaires-container');
-    if (!container) return;
-
-    const joursOrdre = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
-    const joursLabels = {
-      'lundi': 'Lundi',
-      'mardi': 'Mardi',
-      'mercredi': 'Mercredi',
-      'jeudi': 'Jeudi',
-      'vendredi': 'Vendredi',
-      'samedi': 'Samedi',
-      'dimanche': 'Dimanche'
-    };
-
-    let html = '';
-
-    joursOrdre.forEach(jour => {
-      const plages = horaires[jour];
-      
-      if (!plages || plages.length === 0) {
-        // Jour fermé
-        html += `
-          <div class="flex justify-between items-center py-2 border-b border-base-200">
-            <span class="font-semibold">${joursLabels[jour]}</span>
-            <span class="badge badge-ghost">Fermé</span>
-          </div>
-        `;
-      } else {
-        // Jour ouvert avec plages horaires
-        const horairesText = plages.map(p => `${p.debut} - ${p.fin}`).join(' et ');
-        html += `
-          <div class="flex justify-between items-start py-2 border-b border-base-200">
-            <span class="font-semibold">${joursLabels[jour]}</span>
-            <span class="text-right text-base-content/70">${horairesText}</span>
-          </div>
-        `;
-      }
-    });
-
-    container.innerHTML = html;
-  }
-
-  function displayReseaux(reseaux) {
-    const card = document.getElementById('reseaux-card');
-    const container = document.getElementById('reseaux-container');
-    if (!container || !card) return;
-
-    let html = '';
-    let hasReseaux = false;
-
-    // Facebook
-    if (reseaux.facebook) {
-      hasReseaux = true;
-      html += `
-        <a href="${reseaux.facebook}" target="_blank" rel="noopener noreferrer" class="btn btn-circle btn-outline">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="currentColor" viewBox="0 0 24 24">
-            <path d="M9 8h-3v4h3v12h5v-12h3.642l.358-4h-4v-1.667c0-.955.192-1.333 1.115-1.333h2.885v-5h-3.808c-3.596 0-5.192 1.583-5.192 4.615v3.385z"/>
-          </svg>
-        </a>
-      `;
-    }
-
-    // Instagram
-    if (reseaux.instagram) {
-      hasReseaux = true;
-      html += `
-        <a href="${reseaux.instagram}" target="_blank" rel="noopener noreferrer" class="btn btn-circle btn-outline">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="currentColor" viewBox="0 0 24 24">
-            <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
-          </svg>
-        </a>
-      `;
-    }
-
-    // Twitter/X
-    if (reseaux.twitter) {
-      hasReseaux = true;
-      html += `
-        <a href="${reseaux.twitter}" target="_blank" rel="noopener noreferrer" class="btn btn-circle btn-outline">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="currentColor" viewBox="0 0 24 24">
-            <path d="M24 4.557c-.883.392-1.832.656-2.828.775 1.017-.609 1.798-1.574 2.165-2.724-.951.564-2.005.974-3.127 1.195-.897-.957-2.178-1.555-3.594-1.555-3.179 0-5.515 2.966-4.797 6.045-4.091-.205-7.719-2.165-10.148-5.144-1.29 2.213-.669 5.108 1.523 6.574-.806-.026-1.566-.247-2.229-.616-.054 2.281 1.581 4.415 3.949 4.89-.693.188-1.452.232-2.224.084.626 1.956 2.444 3.379 4.6 3.419-2.07 1.623-4.678 2.348-7.29 2.04 2.179 1.397 4.768 2.212 7.548 2.212 9.142 0 14.307-7.721 13.995-14.646.962-.695 1.797-1.562 2.457-2.549z"/>
-          </svg>
-        </a>
-      `;
-    }
-
-    if (hasReseaux) {
-      container.innerHTML = html;
-      card.style.display = 'block';
-    } else {
-      card.style.display = 'none';
-    }
-  }
-
-  // Charger au démarrage
-  loadConfig();
-</script>
