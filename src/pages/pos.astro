@@ -20,6 +20,7 @@ import api from '../lib/api';
 let restaurantName = 'POS';
 let logoUrl        = '/favicon.ico';
 let theme          = 'dark';
+let notifAudio: HTMLAudioElement | null = null;
 
 const VALID_THEMES: readonly string[] = [
   'light','dark','cupcake','bumblebee','emerald','corporate',
@@ -648,13 +649,17 @@ const posUser = { name: user.name, role: user.roles[0] };
   // ── Audio (Web Audio API, unlock iOS) ─────────
   function initAudio() {
     const AC = window.AudioContext || (window as any).webkitAudioContext;
-    if (!AC) return;
-    audioCtx = new AC();
+    if (AC) audioCtx = new AC();
+
+    // Pré-charger le fichier son
+    notifAudio = new Audio('/sounds/kitchen-bell.mp3');
+    notifAudio.preload = 'auto';
+    // Fallback ogg si mp3 non supporté
+    // notifAudio = new Audio('/sounds/kitchen-bell.ogg');
   }
 
   function unlockAudio() {
     if (audioUnlocked || !audioCtx) return;
-    // Jouer un buffer silencieux pour débloquer l'AudioContext sur iOS
     const buf = audioCtx.createBuffer(1, 1, 22050);
     const src = audioCtx.createBufferSource();
     src.buffer = buf;
@@ -664,6 +669,11 @@ const posUser = { name: user.name, role: user.roles[0] };
       audioCtx.resume().then(() => { audioUnlocked = true; });
     } else {
       audioUnlocked = true;
+    }
+
+    // Débloquer aussi l'élément <audio> sur iOS
+    if (notifAudio) {
+      notifAudio.play().then(() => notifAudio!.pause()).catch(() => {});
     }
   }
 
@@ -685,10 +695,18 @@ const posUser = { name: user.name, role: user.roles[0] };
   }
 
   function playNewOrderSound() {
-    // Deux bips montants — sonne comme une cloche de cuisine
-    playBeep(660, 0.1, 0.5);
-    setTimeout(() => playBeep(880, 0.2, 0.5), 120);
-    setTimeout(() => playBeep(1100, 0.25, 0.4), 280);
+    if (!soundEnabled) return;
+
+    if (notifAudio) {
+      notifAudio.currentTime = 0; // Rembobine si déjà joué
+      notifAudio.volume = 0.8;
+      notifAudio.play().catch(() => {
+        // Fallback Web Audio API si le fichier échoue
+        playBeep(660, 0.1, 0.5);
+        setTimeout(() => playBeep(880, 0.2, 0.5), 120);
+        setTimeout(() => playBeep(1100, 0.25, 0.4), 280);
+      });
+    }
   }
 
   function playAddToCartSound() {
