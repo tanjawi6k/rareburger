@@ -217,7 +217,7 @@ export interface PrintResult {
 // ============================================
 
 const API_BASE_URL =
-  (import.meta as any).env?.PUBLIC_API_URL || 'http://127.0.0.1:5000/api';
+  (import.meta as any).env?.PUBLIC_API_URL || 'https://api.rareburger.be/api';
 
 // ============================================
 // TOKEN — cookie en priorité, localStorage en fallback

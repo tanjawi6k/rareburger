@@ -33,7 +33,7 @@ try {
   restaurantName = (configData.nom as string|undefined) ?? 'CMDOLA';
 } catch { /* thème par défaut */ }
 
-const apiBaseUrl: string = import.meta.env.PUBLIC_API_URL ?? 'http://127.0.0.1:5000/api';
+const apiBaseUrl: string = import.meta.env.PUBLIC_API_URL ?? 'https://api.rareburger.be/api';
 
 // Pré-charger la commande si numéro dans l'URL (SSR)
 const urlNumero = Astro.url.searchParams.get('numero') || Astro.url.searchParams.get('order');
@@ -381,7 +381,7 @@ const initialOrderJson = initialOrder ? JSON.stringify(initialOrder) : 'null';
   // ── Helpers ───────────────────────────────────
   function getApiBase(): string {
     return document.querySelector<HTMLMetaElement>('meta[name="api-url"]')?.content
-      ?? 'http://127.0.0.1:5000/api';
+      ?? 'https://api.rareburger.be/api';
   }
 
   function esc(v: unknown): string {

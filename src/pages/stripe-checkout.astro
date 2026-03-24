@@ -44,7 +44,7 @@ try {
 } catch { /* géré côté client */ }
 
 const initialOrderJson = initialOrder ? JSON.stringify(initialOrder) : 'null';
-const apiBaseUrl: string = import.meta.env.PUBLIC_API_URL ?? 'http://127.0.0.1:5000/api';
+const apiBaseUrl: string = import.meta.env.PUBLIC_API_URL ?? 'https://api.rareburger.be/api';
 ---
 
 <!DOCTYPE html>
@@ -185,7 +185,7 @@ const apiBaseUrl: string = import.meta.env.PUBLIC_API_URL ?? 'http://127.0.0.1:5
 
   function getApiBase(): string {
     return document.querySelector<HTMLMetaElement>('meta[name="api-url"]')?.content
-      ?? 'http://127.0.0.1:5000/api';
+      ?? 'https://api.rareburger.be/api';
   }
 
   function getOrderId(): string {

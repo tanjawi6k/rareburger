@@ -126,7 +126,7 @@ try {
   hasError = true;
 }
 
-const apiBaseUrl: string = import.meta.env.PUBLIC_API_URL ?? 'http://127.0.0.1:5000/api';
+const apiBaseUrl: string = import.meta.env.PUBLIC_API_URL ?? 'https://api.rareburger.be/api';
 const restaurantName: string = (restaurantConfig.nom as string | undefined) ?? 'CMDOLA';
 const restaurantTel: string  = (restaurantConfig.telephone as string | undefined) ?? '';
 ---
@@ -391,7 +391,7 @@ const restaurantTel: string  = (restaurantConfig.telephone as string | undefined
   // ── Utilitaire API URL ────────────────────────
   function getApiBase(): string {
     return document.querySelector<HTMLMetaElement>('meta[name="api-url"]')?.content
-      ?? 'http://127.0.0.1:5000/api';
+      ?? 'https://api.rareburger.be/api';
   }
 
   // ── Toast (DOM, pas de innerHTML) ────────────

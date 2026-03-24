@@ -41,7 +41,7 @@ try {
 const orderId = Astro.url.searchParams.get('order') ?? '';
 const reason  = Astro.url.searchParams.get('reason') ?? 'default';
 
-const apiBaseUrl: string = import.meta.env.PUBLIC_API_URL ?? 'http://127.0.0.1:5000/api';
+const apiBaseUrl: string = import.meta.env.PUBLIC_API_URL ?? 'https://api.rareburger.be/api';
 
 // ─────────────────────────────────────────
 // Messages selon la raison (SSR — pas de XSS possible)
@@ -234,7 +234,7 @@ const reasonData: ReasonData = REASONS[reason] ?? REASONS.default;
 <script>
   function getApiBase(): string {
     return document.querySelector<HTMLMetaElement>('meta[name="api-url"]')?.content
-      ?? 'http://127.0.0.1:5000/api';
+      ?? 'https://api.rareburger.be/api';
   }
 
   async function init() {
