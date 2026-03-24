@@ -1,0 +1,1502 @@
+---
+// src/pages/pos.astro — Terminal Point de Vente
+// Auth propre : cookie pos_token (séparé de admin_token)
+// PWA : installable, hors-ligne partiel, notification sonore
+export const prerender = false;
+
+import '../assets/app.css';
+
+// ── Auth ──────────────────────────────────────────────────
+// Accepte admin, chef, caissier
+const user = Astro.locals.user;
+if (!user) return Astro.redirect('/login?redirect=/pos');
+const allowed = ['admin','chef','caissier'];
+if (!user.roles.some(r => allowed.includes(r))) {
+  return Astro.redirect('/login');
+}
+
+// ── Config SSR ────────────────────────────────────────────
+import api from '../lib/api';
+let restaurantName = 'POS';
+let logoUrl        = '/favicon.ico';
+let theme          = 'dark';
+
+const VALID_THEMES: readonly string[] = [
+  'light','dark','cupcake','bumblebee','emerald','corporate',
+  'synthwave','retro','cyberpunk','valentine','halloween','garden',
+  'forest','aqua','lofi','pastel','fantasy','wireframe','black',
+  'luxury','dracula','cmyk','autumn','business','acid','lemonade',
+  'night','coffee','winter','dim','nord','sunset',
+];
+const cookieTheme = Astro.cookies.get('theme')?.value;
+
+try {
+  const cfg = await api.config.get() as Record<string,any>;
+  restaurantName = (cfg.nom as string|undefined) ?? 'POS';
+  const logoFile = (cfg.theme as Record<string,string>|undefined)?.logo;
+  logoUrl        = logoFile ? api.images.getUrl(logoFile) : '/favicon.ico';
+  const t        = (cfg.theme as Record<string,string>|undefined)?.daisy;
+  theme = (cookieTheme && VALID_THEMES.includes(cookieTheme))
+    ? cookieTheme
+    : (t && VALID_THEMES.includes(t) ? t : 'dark');
+} catch {}
+
+const apiBaseUrl: string = import.meta.env.PUBLIC_API_URL ?? 'http://127.0.0.1:5000/api';
+const posUser = { name: user.name, role: user.roles[0] };
+---
+
+<!DOCTYPE html>
+<html lang="fr" data-theme={theme}>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="robots" content="noindex, nofollow" />
+  <meta name="theme-color" content="#1e293b" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="POS" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="apple-touch-icon" href="/pwa-192.png" />
+  <meta name="api-url" content={apiBaseUrl} />
+  <title>POS — {restaurantName}</title>
+  <link rel="icon" href={logoUrl} />
+
+  <!-- Anti-FOUC -->
+  <script is:inline>
+    (function(){
+      var v=['light','dark','cupcake','bumblebee','emerald','corporate','synthwave','retro',
+        'cyberpunk','valentine','halloween','garden','forest','aqua','lofi','pastel','fantasy',
+        'wireframe','black','luxury','dracula','cmyk','autumn','business','acid','lemonade',
+        'night','coffee','winter','dim','nord','sunset'];
+      var c=document.cookie.split(';').find(function(x){return x.trim().startsWith('theme=');});
+      var t=c?decodeURIComponent(c.split('=')[1].trim()):null;
+      if(t&&v.indexOf(t)!==-1) document.documentElement.setAttribute('data-theme',t);
+    }());
+  </script>
+
+  <!-- Données SSR passées au client -->
+  <script id="pos-user" type="application/json" set:html={JSON.stringify(posUser)} />
+</head>
+
+<body class="bg-base-200 select-none" style="min-height:100dvh;min-height:100vh;overscroll-behavior:none;">
+
+<!-- ══════════════════════════════════════════
+     ÉCRAN SPLASH / UNLOCK AUDIO
+     Affiché jusqu'au premier tap — débloque l'AudioContext iOS
+════════════════════════════════════════════ -->
+<div id="splash" class="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-base-300 gap-6"
+  style="touch-action:manipulation;">
+  <img src={logoUrl} alt="Logo" class="w-24 h-24 rounded-2xl shadow-xl object-contain" onerror="this.src='/favicon.ico'" />
+  <div class="text-center">
+    <h1 class="text-3xl font-black text-base-content">{restaurantName}</h1>
+    <p class="text-base-content/60 text-sm mt-1">Terminal point de vente</p>
+  </div>
+  <button id="splashBtn"
+    class="btn btn-primary btn-lg gap-3 px-10 mt-4 shadow-lg active:scale-95 transition-transform">
+    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+        d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+    </svg>
+    Démarrer la session
+  </button>
+  <p class="text-xs text-base-content/40">Connecté : {posUser.name} ({posUser.role})</p>
+</div>
+
+<!-- ══════════════════════════════════════════
+     APP PRINCIPALE (cachée jusqu'au splash)
+════════════════════════════════════════════ -->
+<div id="app" class="hidden flex flex-col" style="min-height:100dvh;min-height:100vh;">
+
+  <!-- ── Navbar ─────────────────────────────── -->
+  <nav class="navbar bg-base-100 shadow-md sticky top-0 z-50 px-3 gap-2"
+    style="padding-top:env(safe-area-inset-top,0);min-height:3.5rem;">
+    <div class="flex-1 flex items-center gap-2 min-w-0">
+      <img src={logoUrl} alt="Logo" class="w-9 h-9 rounded-lg object-contain shrink-0"
+        onerror="this.src='/favicon.ico'" />
+      <div class="min-w-0">
+        <p class="font-bold text-sm leading-none truncate">{restaurantName}</p>
+        <p class="text-xs text-base-content/50 truncate">{posUser.name}</p>
+      </div>
+    </div>
+    <div class="flex-none flex items-center gap-1">
+      <!-- Badge nouvelles commandes -->
+      <div id="newOrdersBadge"
+        class="hidden badge badge-error badge-lg font-bold animate-pulse cursor-pointer"
+        id="newOrdersBadge">
+        <span id="newOrdersCount">0</span> nouvelle(s)
+      </div>
+      <!-- Son on/off -->
+      <button id="soundToggle" class="btn btn-ghost btn-sm btn-circle" aria-label="Son" title="Son">
+        🔔
+      </button>
+      <!-- Déconnexion -->
+      <a href="/login" class="btn btn-ghost btn-sm btn-circle text-error" aria-label="Déconnexion">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+        </svg>
+      </a>
+    </div>
+  </nav>
+
+  <!-- ── Tabs ───────────────────────────────── -->
+  <div class="tabs tabs-boxed bg-base-100 px-3 pb-2 pt-1 shadow-sm z-40 sticky"
+    style="top:3.5rem;" role="tablist">
+    <button role="tab" class="tab tab-active text-sm gap-1.5 flex-1" data-tab="caisse">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+          d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/>
+      </svg>
+      Caisse
+    </button>
+    <button role="tab" class="tab text-sm gap-1.5 flex-1" data-tab="commandes">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+          d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+      </svg>
+      Commandes
+      <span id="tabCommandesBadge" class="badge badge-xs badge-error hidden"></span>
+    </button>
+    <button role="tab" class="tab text-sm gap-1.5 flex-1" data-tab="stock">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+          d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+      </svg>
+      Stock
+    </button>
+  </div>
+
+  <!-- ══ TAB CAISSE ══════════════════════════ -->
+  <div id="tab-caisse" class="tab-panel flex-1 overflow-hidden">
+    <div class="flex h-full" style="height:calc(100dvh - 7rem);height:calc(100vh - 7rem);">
+
+      <!-- Produits (gauche) -->
+      <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <!-- Filtre catégories -->
+        <div id="catScrollWrap"
+          class="flex gap-2 px-3 py-2 overflow-x-auto shrink-0 bg-base-100 border-b border-base-300"
+          style="scrollbar-width:none;">
+          <button class="btn btn-xs btn-primary shrink-0" data-catbtn="">Tous</button>
+        </div>
+        <!-- Grille produits -->
+        <div id="productsGrid"
+          class="flex-1 overflow-y-auto p-3 grid gap-3"
+          style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr));align-content:start;">
+          <div class="col-span-full flex justify-center py-10">
+            <span class="loading loading-spinner loading-lg text-primary"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Panier (droite — desktop) / bottom sheet (mobile) -->
+      <div id="cartPanel"
+        class="w-80 shrink-0 flex flex-col bg-base-100 border-l border-base-300 hidden lg:flex">
+        <div class="p-4 border-b border-base-300">
+          <h2 class="font-bold text-lg">Panier</h2>
+        </div>
+        <div id="cartList" class="flex-1 overflow-y-auto p-3 space-y-2">
+          <p class="text-center text-base-content/50 py-8 text-sm">Vide</p>
+        </div>
+        <div class="p-4 border-t border-base-300 space-y-3">
+          <div id="cartTypeRow" class="flex gap-2">
+            <select id="cartType" class="select select-bordered select-sm flex-1">
+              <option value="sur_place">🍽️ Sur place</option>
+              <option value="emporter">🥡 À emporter</option>
+            </select>
+            <input id="cartTable" type="number" min="1" placeholder="Table"
+              class="input input-bordered input-sm w-20" />
+          </div>
+          <textarea id="cartNotes" class="textarea textarea-bordered textarea-sm w-full h-16 resize-none"
+            placeholder="Notes…"></textarea>
+          <div class="flex justify-between items-center">
+            <span class="font-bold text-lg">Total</span>
+            <span id="cartTotal" class="font-black text-2xl text-primary tabular-nums">0,00 €</span>
+          </div>
+          <button id="validateBtn" class="btn btn-primary btn-block btn-lg" disabled>
+            Valider →
+          </button>
+          <button id="clearCartBtn" class="btn btn-ghost btn-block btn-sm text-error">Vider</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Barre panier mobile (< lg) -->
+    <div id="mobileCartBar"
+      class="fixed bottom-0 left-0 right-0 z-40 lg:hidden bg-base-100 border-t border-base-300 p-3 flex gap-3 items-center"
+      style="padding-bottom:max(0.75rem,env(safe-area-inset-bottom,0));">
+      <div class="flex-1">
+        <p class="text-xs text-base-content/60 leading-none">Panier</p>
+        <p id="mobileCartSummary" class="font-bold text-sm">Vide</p>
+      </div>
+      <span id="mobileCartTotal" class="font-black text-xl text-primary tabular-nums">0,00 €</span>
+      <button id="openCartBtn" class="btn btn-primary btn-sm gap-1">
+        Voir
+        <span id="mobileCartCount" class="badge badge-sm badge-secondary hidden">0</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ══ TAB COMMANDES ═══════════════════════ -->
+  <div id="tab-commandes" class="tab-panel hidden flex-1 overflow-y-auto p-3 space-y-3">
+    <!-- Stats -->
+    <div class="stats stats-horizontal shadow w-full bg-base-100 text-sm">
+      <div class="stat p-3">
+        <div class="stat-title text-xs">Nouvelles</div>
+        <div class="stat-value text-warning text-2xl" id="cntNouvelles">—</div>
+      </div>
+      <div class="stat p-3">
+        <div class="stat-title text-xs">En prépa</div>
+        <div class="stat-value text-info text-2xl" id="cntPrepa">—</div>
+      </div>
+      <div class="stat p-3">
+        <div class="stat-title text-xs">Prêtes</div>
+        <div class="stat-value text-success text-2xl" id="cntPretes">—</div>
+      </div>
+    </div>
+    <!-- Kanban colonnes (desktop) / liste (mobile) -->
+    <div id="kanbanWrap" class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div>
+        <h3 class="font-bold text-warning mb-2 flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-warning inline-block"></span> Nouvelles
+        </h3>
+        <div id="colNouvelles" class="space-y-3"></div>
+      </div>
+      <div>
+        <h3 class="font-bold text-info mb-2 flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-info inline-block"></span> En préparation
+        </h3>
+        <div id="colPrepa" class="space-y-3"></div>
+      </div>
+      <div>
+        <h3 class="font-bold text-success mb-2 flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-success inline-block"></span> Prêtes / Livraison
+        </h3>
+        <div id="colPretes" class="space-y-3"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ TAB STOCK ════════════════════════════ -->
+  <div id="tab-stock" class="tab-panel hidden flex-1 overflow-y-auto p-3">
+    <div class="overflow-x-auto">
+      <table class="table table-sm table-zebra bg-base-100 rounded-xl shadow">
+        <thead>
+          <tr>
+            <th>Produit</th>
+            <th>Catégorie</th>
+            <th>Prix</th>
+            <th>Statut</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="stockBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div><!-- /app -->
+
+<!-- ══════════════════════════════════════════
+     MODALS
+════════════════════════════════════════════ -->
+
+<!-- Modal produit (personnalisation + ajout panier) -->
+<dialog id="productModal" class="modal modal-bottom sm:modal-middle">
+  <div class="modal-box p-0 overflow-hidden max-w-lg">
+    <form method="dialog">
+      <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2 z-10">✕</button>
+    </form>
+    <!-- Image -->
+    <div id="pmImgWrap" class="w-full bg-base-200 overflow-hidden" style="height:180px;">
+      <img id="pmImg" src="" alt="" class="w-full h-full object-cover" />
+    </div>
+    <div class="p-5 space-y-4">
+      <div>
+        <h3 id="pmName" class="text-xl font-bold"></h3>
+        <p id="pmDesc" class="text-sm text-base-content/60 mt-0.5"></p>
+      </div>
+      <!-- Choix obligatoires (choices) injectés dynamiquement -->
+      <div id="pmChoices" class="space-y-3"></div>
+      <!-- Suppléments -->
+      <div id="pmSuppsWrap" class="hidden">
+        <p class="text-sm font-semibold mb-1.5">Suppléments</p>
+        <div id="pmSupps" class="space-y-1"></div>
+      </div>
+      <!-- Retirer ingrédients -->
+      <div id="pmRemovableWrap" class="hidden">
+        <p class="text-sm font-semibold mb-1.5">Retirer</p>
+        <div id="pmRemovable" class="flex flex-wrap gap-2"></div>
+      </div>
+      <!-- Quantité + prix -->
+      <div class="flex items-center justify-between gap-4">
+        <div class="flex items-center gap-2">
+          <button id="pmMinus" class="btn btn-circle btn-sm">−</button>
+          <span id="pmQty" class="font-black text-2xl tabular-nums w-8 text-center">1</span>
+          <button id="pmPlus"  class="btn btn-circle btn-sm">+</button>
+        </div>
+        <p class="font-black text-2xl text-primary tabular-nums" id="pmTotal">0,00 €</p>
+      </div>
+      <button id="pmAdd" class="btn btn-primary btn-block btn-lg">
+        Ajouter au panier
+      </button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>fermer</button></form>
+</dialog>
+
+<!-- Drawer panier mobile -->
+<dialog id="cartDrawer" class="modal modal-bottom">
+  <div class="modal-box max-h-[85dvh] p-0 flex flex-col">
+    <div class="p-4 flex items-center justify-between border-b border-base-300">
+      <h2 class="font-bold text-lg">Panier</h2>
+      <form method="dialog"><button class="btn btn-sm btn-ghost btn-circle">✕</button></form>
+    </div>
+    <div id="drawerCartList" class="flex-1 overflow-y-auto p-4 space-y-2">
+      <p class="text-center text-base-content/50 py-8 text-sm">Vide</p>
+    </div>
+    <div class="p-4 border-t border-base-300 space-y-3">
+      <div class="flex gap-2">
+        <select id="drawerType" class="select select-bordered select-sm flex-1">
+          <option value="sur_place">🍽️ Sur place</option>
+          <option value="emporter">🥡 À emporter</option>
+        </select>
+        <input id="drawerTable" type="number" min="1" placeholder="Table"
+          class="input input-bordered input-sm w-20" />
+      </div>
+      <textarea id="drawerNotes" class="textarea textarea-bordered textarea-sm w-full h-14 resize-none"
+        placeholder="Notes…"></textarea>
+      <div class="flex justify-between items-center">
+        <span class="font-bold">Total</span>
+        <span id="drawerTotal" class="font-black text-2xl text-primary tabular-nums">0,00 €</span>
+      </div>
+      <button id="drawerValidateBtn" class="btn btn-primary btn-block btn-lg" disabled>
+        Valider →
+      </button>
+      <button id="drawerClearBtn" class="btn btn-ghost btn-block btn-sm text-error">Vider</button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>fermer</button></form>
+</dialog>
+
+<!-- Modal paiement (choix CB / espèces) -->
+<dialog id="payModal" class="modal modal-bottom sm:modal-middle">
+  <div class="modal-box max-w-md space-y-5">
+    <h3 class="font-bold text-xl text-center">Mode de paiement</h3>
+    <p class="text-center text-3xl font-black text-primary tabular-nums" id="payAmount">0,00 €</p>
+    <div class="grid grid-cols-2 gap-4">
+      <button id="payCard" class="btn btn-lg h-auto py-6 flex-col gap-2 border-2">
+        <span class="text-4xl">💳</span>
+        <span class="font-bold">Carte</span>
+      </button>
+      <button id="payCash" class="btn btn-lg h-auto py-6 flex-col gap-2 border-2">
+        <span class="text-4xl">💵</span>
+        <span class="font-bold">Espèces</span>
+      </button>
+    </div>
+    <form method="dialog"><button class="btn btn-ghost btn-block btn-sm">Annuler</button></form>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>fermer</button></form>
+</dialog>
+
+<!-- Modal espèces -->
+<dialog id="cashModal" class="modal modal-bottom sm:modal-middle">
+  <div class="modal-box max-w-sm space-y-4">
+    <h3 class="font-bold text-xl text-center">💵 Espèces</h3>
+    <p class="text-center">Montant dû : <span id="cashDue" class="font-black text-2xl text-primary tabular-nums">0,00 €</span></p>
+    <div class="form-control">
+      <label class="label"><span class="label-text font-semibold">Le client donne</span></label>
+      <input id="cashGiven" type="number" step="0.01" min="0" placeholder="0,00"
+        class="input input-bordered input-lg text-center text-2xl font-bold" inputmode="decimal" />
+    </div>
+    <div id="cashChangeWrap" class="hidden text-center">
+      <p class="text-sm text-base-content/60">À rendre</p>
+      <p id="cashChange" class="font-black text-4xl text-success tabular-nums">0,00 €</p>
+    </div>
+    <button id="cashConfirm" class="btn btn-success btn-block btn-lg" disabled>
+      ✅ Confirmer le paiement
+    </button>
+    <form method="dialog"><button class="btn btn-ghost btn-block btn-sm">Annuler</button></form>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>fermer</button></form>
+</dialog>
+
+<!-- Modal détail commande (kanban) -->
+<dialog id="orderModal" class="modal modal-bottom sm:modal-middle">
+  <div class="modal-box max-w-lg space-y-4">
+    <form method="dialog">
+      <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+    </form>
+    <div class="flex justify-between items-start">
+      <div>
+        <h3 class="font-mono font-black text-2xl" id="omNumero">#—</h3>
+        <p class="text-base-content/60 text-sm" id="omDate">—</p>
+      </div>
+      <div class="text-right">
+        <span class="badge badge-lg" id="omType">—</span>
+        <p class="text-sm mt-1" id="omClient">—</p>
+      </div>
+    </div>
+    <div id="omTableRow" class="alert alert-info py-2 text-sm hidden">
+      Table : <strong id="omTable">—</strong>
+    </div>
+    <div id="omArticles" class="space-y-2 max-h-52 overflow-y-auto"></div>
+    <div id="omNotes" class="alert alert-warning text-sm hidden"></div>
+    <div class="flex justify-between font-bold text-lg border-t border-base-300 pt-3">
+      <span>Total</span>
+      <span class="text-primary tabular-nums" id="omTotal">—</span>
+    </div>
+    <!-- Changement statut -->
+    <div class="flex gap-2">
+      <select id="omStatut" class="select select-bordered select-sm flex-1">
+        <option value="nouvelle">Nouvelle</option>
+        <option value="en_preparation">En préparation</option>
+        <option value="prete">Prête</option>
+        <option value="en_livraison">En livraison</option>
+        <option value="terminee">Terminée</option>
+        <option value="annulee">Annulée</option>
+      </select>
+      <button id="omConfirmStatus" class="btn btn-primary btn-sm">Confirmer</button>
+    </div>
+    <!-- Impression -->
+    <button id="omPrint" class="btn btn-accent btn-block gap-2">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+          d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/>
+      </svg>
+      Imprimer le ticket
+    </button>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>fermer</button></form>
+</dialog>
+
+<!-- Modal confirmation vider panier -->
+<dialog id="confirmClearModal" class="modal modal-bottom sm:modal-middle">
+  <div class="modal-box">
+    <h3 class="font-bold text-lg">Vider le panier ?</h3>
+    <div class="modal-action">
+      <form method="dialog"><button class="btn btn-ghost">Annuler</button></form>
+      <button id="confirmClearYes" class="btn btn-error">Vider</button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>fermer</button></form>
+</dialog>
+
+<!-- Toast -->
+<div id="toasts" class="toast toast-top toast-end z-[9999] pointer-events-none"
+  style="top:calc(1rem + env(safe-area-inset-top,0));" aria-live="polite"></div>
+
+</body>
+</html>
+
+<style is:global>
+  /* ── POS-only globals ───────────────────── */
+  .tab-panel { display: none; }
+  .tab-panel.active { display: flex; flex-direction: column; flex: 1; }
+
+  /* Produit card */
+  .prod-card {
+    transition: transform .12s, box-shadow .12s;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .prod-card:active { transform: scale(0.94); }
+  .prod-card.unavailable { opacity: .45; filter: grayscale(1); pointer-events: none; }
+
+  /* Kanban card */
+  .order-card { cursor: pointer; transition: box-shadow .15s; }
+  .order-card:active { box-shadow: none; }
+
+  /* Pulse nouvelle commande */
+  @keyframes pulse-ring {
+    0%   { box-shadow: 0 0 0 0 oklch(var(--er)/0.5); }
+    100% { box-shadow: 0 0 0 12px oklch(var(--er)/0); }
+  }
+  .new-pulse { animation: pulse-ring 1.5s ease-out infinite; }
+
+  /* Safe areas */
+  #mobileCartBar {
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0));
+  }
+
+  /* Prevent overscroll on the page */
+  body { overscroll-behavior: none; }
+
+  /* Catégorie filter scroll */
+  #catScrollWrap { scrollbar-width: none; -ms-overflow-style: none; }
+  #catScrollWrap::-webkit-scrollbar { display: none; }
+
+  /* Touch targets */
+  @media (pointer: coarse) {
+    button, a, select, input[type="checkbox"], input[type="radio"] { min-height: 44px; }
+    .btn-xs { min-height: 36px; }
+  }
+</style>
+
+<script>
+  // ════════════════════════════════════════════
+  //  POS — Terminal point de vente
+  //  Script bundlé TypeScript, aucun import relatif
+  // ════════════════════════════════════════════
+
+  // ── Types ─────────────────────────────────────
+  interface Supplement  { id: string; name: string; price: number; }
+  interface Category    { id: string; name: string; icon: string; }
+  interface ChoiceOption { id: string; name: string; price_modifier: number; }
+  interface Choice      { id: string; label: string; required: boolean; options: ChoiceOption[]; }
+  interface Product {
+    id: string; nom: string; description?: string; prix: number;
+    category?: string; images?: string[]; supplements?: string[];
+    removable_ingredients?: string[]; allergenes?: string[];
+    choices?: Choice[]; popular?: boolean; disponible: boolean;
+  }
+  interface CartItem {
+    id: string; nom: string; prix: number; quantite: number;
+    supplements: { id: string; name: string; price: number }[];
+    removed: string[];
+    choices: { choice_id: string; option_id: string; option_name: string; price_modifier: number }[];
+  }
+  interface Commande {
+    id: string; numero: string; statut: string; type: string;
+    date_creation: string; notes?: string; prix_total: number;
+    client?: Record<string, unknown>; articles: any[];
+    numero_table?: string; sous_total?: number; frais_livraison?: number;
+    paiement?: { mode?: string; statut?: string };
+  }
+
+  // ── État global ───────────────────────────────
+  let products:     Product[]    = [];
+  let categories:   Category[]   = [];
+  let supplements:  Supplement[] = [];
+  let cart:         CartItem[]   = [];
+  let commandes:    Commande[]   = [];
+  let currentProduct: Product | null = null;
+  let currentOrderId: string | null  = null;
+  let currentCat    = '';
+  let pmQty         = 1;
+  let soundEnabled  = true;
+  let audioCtx: AudioContext | null = null;
+  let audioUnlocked = false;
+  let lastCommandesIds = new Set<string>();
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+  // ── Helpers ───────────────────────────────────
+  function getApiBase() {
+    return document.querySelector<HTMLMetaElement>('meta[name="api-url"]')?.content
+      ?? 'http://127.0.0.1:5000/api';
+  }
+  function getToken() {
+    const c = document.cookie.split(';').find(x => x.trim().startsWith('admin_token='));
+    return c ? decodeURIComponent(c.split('=')[1].trim()) : '';
+  }
+  function authH(): Record<string,string> {
+    return { 'Authorization': `Bearer ${getToken()}`, 'Content-Type': 'application/json' };
+  }
+  function authHFile(): Record<string,string> {
+    return { 'Authorization': `Bearer ${getToken()}` };
+  }
+
+  const fmt = (n: number) =>
+    new Intl.NumberFormat('fr-BE', { style:'currency', currency:'EUR' }).format(n);
+
+  function esc(v: unknown): string {
+    const d = document.createElement('div');
+    d.textContent = String(v ?? '');
+    return d.innerHTML;
+  }
+
+  function q<T extends HTMLElement>(id: string) { return document.getElementById(id) as T; }
+  function dialog(id: string) { return q<HTMLDialogElement>(id); }
+
+  function showToast(msg: string, type: 'success'|'error'|'info'|'warning' = 'info') {
+    const c = q('toasts');
+    const el = document.createElement('div');
+    el.className = `alert alert-${type} shadow-lg text-sm py-2 px-4 rounded-xl pointer-events-auto max-w-xs`;
+    el.textContent = msg;
+    c.appendChild(el);
+    setTimeout(() => el.remove(), 3500);
+  }
+
+  async function apiFetch<T>(path: string, opts: RequestInit = {}): Promise<T> {
+    const res = await fetch(`${getApiBase()}${path}`, opts);
+    if (res.status === 401) { window.location.href = '/login?expired=1'; throw new Error('401'); }
+    if (!res.ok) {
+      const b = await res.json().catch(() => ({}));
+      throw new Error((b as any).error ?? `HTTP ${res.status}`);
+    }
+    return res.json() as Promise<T>;
+  }
+
+  function fmtDate(s: string): string {
+    try {
+      return new Intl.DateTimeFormat('fr-BE', {
+        day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit',
+      }).format(new Date(s));
+    } catch { return s; }
+  }
+
+  function elapsed(s: string): { text: string; urgent: boolean } {
+    const diff = Math.floor((Date.now() - new Date(s).getTime()) / 60000);
+    if (diff < 1)  return { text: "À l'instant", urgent: false };
+    if (diff < 15) return { text: `${diff} min`,          urgent: false };
+    if (diff < 30) return { text: `${diff} min ⚠️`,       urgent: true  };
+    if (diff < 60) return { text: `${diff} min 🔴`,       urgent: true  };
+    const h = Math.floor(diff/60), m = diff%60;
+    return { text: `${h}h${String(m).padStart(2,'0')} 🔴`, urgent: true };
+  }
+
+  // ── Audio (Web Audio API, unlock iOS) ─────────
+  function initAudio() {
+    const AC = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AC) return;
+    audioCtx = new AC();
+  }
+
+  function unlockAudio() {
+    if (audioUnlocked || !audioCtx) return;
+    // Jouer un buffer silencieux pour débloquer l'AudioContext sur iOS
+    const buf = audioCtx.createBuffer(1, 1, 22050);
+    const src = audioCtx.createBufferSource();
+    src.buffer = buf;
+    src.connect(audioCtx.destination);
+    src.start(0);
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume().then(() => { audioUnlocked = true; });
+    } else {
+      audioUnlocked = true;
+    }
+  }
+
+  function playBeep(freq = 880, dur = 0.15, vol = 0.4) {
+    if (!soundEnabled || !audioCtx) return;
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    try {
+      const osc  = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type      = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + dur);
+    } catch {}
+  }
+
+  function playNewOrderSound() {
+    // Deux bips montants — sonne comme une cloche de cuisine
+    playBeep(660, 0.1, 0.5);
+    setTimeout(() => playBeep(880, 0.2, 0.5), 120);
+    setTimeout(() => playBeep(1100, 0.25, 0.4), 280);
+  }
+
+  function playAddToCartSound() {
+    playBeep(1200, 0.08, 0.25);
+  }
+
+  // ── Tabs ──────────────────────────────────────
+  function initTabs() {
+    document.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const target = btn.dataset.tab!;
+        // Tabs UI
+        document.querySelectorAll('[data-tab]').forEach(b => b.classList.remove('tab-active'));
+        btn.classList.add('tab-active');
+        // Panels
+        document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+        document.getElementById(`tab-${target}`)?.classList.add('active');
+        // Actions spécifiques
+        if (target === 'commandes') loadCommandes();
+        if (target === 'stock')     renderStock();
+      });
+    });
+    // Panel caisse actif par défaut
+    q('tab-caisse').classList.add('active');
+  }
+
+  // ── Menu ──────────────────────────────────────
+  async function loadMenu() {
+    try {
+      const raw = await apiFetch<any>('/menu', { headers: authH() });
+      const data = raw.menu ?? raw;
+      products    = data.produits    ?? [];
+      categories  = data.categories  ?? [];
+      supplements = data.supplements ?? [];
+      renderCatFilters();
+      renderProducts();
+    } catch (err: unknown) {
+      q('productsGrid').innerHTML = `<p class="col-span-full text-center text-error py-8">Erreur : ${esc(err instanceof Error ? err.message : '')}</p>`;
+    }
+  }
+
+  function renderCatFilters() {
+    const wrap = q('catScrollWrap');
+    wrap.innerHTML = '';
+
+    const mkBtn = (label: string, val: string) => {
+      const b = document.createElement('button');
+      b.className = `btn btn-xs shrink-0 ${val === currentCat ? 'btn-primary' : 'btn-ghost'}`;
+      b.dataset.catbtn = val;
+      b.textContent   = label;
+      b.addEventListener('click', () => { currentCat = val; renderCatFilters(); renderProducts(); });
+      wrap.appendChild(b);
+    };
+    mkBtn('Tous', '');
+    categories.forEach(c => mkBtn(`${c.icon} ${c.name}`, c.id));
+  }
+
+  function renderProducts() {
+    const grid = q('productsGrid');
+    grid.innerHTML = '';
+    const list = currentCat ? products.filter(p => p.category === currentCat) : products;
+
+    if (!list.length) {
+      grid.innerHTML = '<p class="col-span-full text-center text-base-content/50 py-10">Aucun produit</p>';
+      return;
+    }
+
+    list.forEach(p => {
+      const imgSrc = p.images?.[0] ? `${getApiBase()}/images/${p.images[0]}` : '';
+      const card = document.createElement('div');
+      card.className = `prod-card card bg-base-100 shadow overflow-hidden${p.disponible ? '' : ' unavailable'}`;
+
+      const fig = document.createElement('figure');
+      fig.style.cssText = 'height:110px;background:oklch(var(--b2));';
+
+      if (imgSrc) {
+        const img = document.createElement('img');
+        img.src     = imgSrc;
+        img.alt     = p.nom;
+        img.loading = 'lazy';
+        img.className = 'w-full h-full object-cover';
+        img.onerror   = () => { fig.style.display = 'none'; };
+        fig.appendChild(img);
+      } else {
+        fig.innerHTML = `<span class="text-4xl text-base-content/20">🍽️</span>`;
+        fig.style.cssText += 'display:flex;align-items:center;justify-content:center;';
+      }
+
+      const body = document.createElement('div');
+      body.className = 'p-2';
+      body.innerHTML = `
+        <p class="font-semibold text-xs leading-snug line-clamp-2">${esc(p.nom)}</p>
+        <p class="font-black text-sm text-primary tabular-nums mt-1">${fmt(p.prix)}</p>
+        ${p.popular ? '<span class="badge badge-xs badge-primary mt-0.5">★</span>' : ''}
+      `;
+
+      card.appendChild(fig);
+      card.appendChild(body);
+      card.addEventListener('click', () => openProductModal(p));
+      grid.appendChild(card);
+    });
+  }
+
+  // ── Modal produit ─────────────────────────────
+  let pmChoicesState: Record<string, string> = {};
+  let pmRemovedState = new Set<string>();
+  let pmSuppsState   = new Set<string>();
+
+  function openProductModal(p: Product) {
+    currentProduct   = p;
+    pmQty            = 1;
+    pmChoicesState   = {};
+    pmRemovedState   = new Set();
+    pmSuppsState     = new Set();
+
+    q<HTMLImageElement>('pmImg').src = p.images?.[0] ? `${getApiBase()}/images/${p.images[0]}` : '';
+    q('pmImgWrap').style.display = p.images?.[0] ? 'block' : 'none';
+    q('pmName').textContent = p.nom;
+    q('pmDesc').textContent = p.description ?? '';
+    q<HTMLElement>('pmQty').textContent = '1';
+
+    // Choix
+    const choicesWrap = q('pmChoices');
+    choicesWrap.innerHTML = '';
+    (p.choices ?? []).forEach(ch => {
+      const div = document.createElement('div');
+      div.innerHTML = `<p class="text-sm font-semibold mb-1">${esc(ch.label)}${ch.required ? ' <span class="text-error">*</span>' : ''}</p>`;
+      ch.options.forEach(opt => {
+        const lbl = document.createElement('label');
+        lbl.className = 'flex items-center gap-2 text-sm py-1.5 cursor-pointer';
+        const radio = document.createElement('input');
+        radio.type  = 'radio';
+        radio.name  = `choice-${ch.id}`;
+        radio.className = 'radio radio-primary radio-sm';
+        radio.addEventListener('change', () => {
+          pmChoicesState[ch.id] = JSON.stringify({ ...opt });
+          refreshPmTotal();
+        });
+        const span = document.createElement('span');
+        span.textContent = opt.name + (opt.price_modifier ? ` (+${fmt(opt.price_modifier)})` : '');
+        lbl.appendChild(radio);
+        lbl.appendChild(span);
+        div.appendChild(lbl);
+      });
+      choicesWrap.appendChild(div);
+    });
+
+    // Suppléments
+    const resolvedSupps = (p.supplements ?? [])
+      .map(id => supplements.find(s => s.id === id)).filter(Boolean) as Supplement[];
+    const suppsWrap = q('pmSuppsWrap');
+    const suppList  = q('pmSupps');
+    suppList.innerHTML = '';
+    if (resolvedSupps.length) {
+      suppsWrap.classList.remove('hidden');
+      resolvedSupps.forEach(s => {
+        const lbl = document.createElement('label');
+        lbl.className = 'flex items-center gap-2 text-sm py-1 cursor-pointer';
+        const cb = document.createElement('input');
+        cb.type      = 'checkbox';
+        cb.className = 'checkbox checkbox-primary checkbox-sm';
+        cb.addEventListener('change', () => {
+          cb.checked ? pmSuppsState.add(s.id) : pmSuppsState.delete(s.id);
+          refreshPmTotal();
+        });
+        const span = document.createElement('span');
+        span.textContent = `${s.name} (+${fmt(s.price)})`;
+        lbl.appendChild(cb);
+        lbl.appendChild(span);
+        suppList.appendChild(lbl);
+      });
+    } else {
+      suppsWrap.classList.add('hidden');
+    }
+
+    // Retirables
+    const removableWrap = q('pmRemovableWrap');
+    const removableDiv  = q('pmRemovable');
+    removableDiv.innerHTML = '';
+    if (p.removable_ingredients?.length) {
+      removableWrap.classList.remove('hidden');
+      p.removable_ingredients.forEach(ing => {
+        const lbl = document.createElement('label');
+        lbl.className = 'flex items-center gap-1.5 border border-base-300 rounded-lg px-2 py-1 cursor-pointer text-xs';
+        const cb = document.createElement('input');
+        cb.type      = 'checkbox';
+        cb.className = 'checkbox checkbox-xs';
+        cb.addEventListener('change', () => {
+          cb.checked ? pmRemovedState.add(ing) : pmRemovedState.delete(ing);
+        });
+        const span = document.createElement('span');
+        span.textContent = `Sans ${ing}`;
+        lbl.appendChild(cb);
+        lbl.appendChild(span);
+        removableDiv.appendChild(lbl);
+      });
+    } else {
+      removableWrap.classList.add('hidden');
+    }
+
+    refreshPmTotal();
+    dialog('productModal').showModal();
+  }
+
+  function pmUnitPrice(): number {
+    if (!currentProduct) return 0;
+    let total = currentProduct.prix;
+    Object.values(pmChoicesState).forEach(v => { total += (JSON.parse(v) as ChoiceOption).price_modifier; });
+    pmSuppsState.forEach(id => {
+      const s = supplements.find(x => x.id === id);
+      if (s) total += s.price;
+    });
+    return total;
+  }
+
+  function refreshPmTotal() {
+    q('pmTotal').textContent = fmt(pmUnitPrice() * pmQty);
+  }
+
+  q('pmMinus').addEventListener('click', () => {
+    if (pmQty > 1) { pmQty--; q('pmQty').textContent = String(pmQty); refreshPmTotal(); }
+  });
+  q('pmPlus').addEventListener('click', () => {
+    pmQty++;
+    q('pmQty').textContent = String(pmQty);
+    refreshPmTotal();
+  });
+
+  q('pmAdd').addEventListener('click', () => {
+    if (!currentProduct) return;
+
+    // Valider choix obligatoires
+    for (const ch of (currentProduct.choices ?? [])) {
+      if (ch.required && !pmChoicesState[ch.id]) {
+        showToast(`Veuillez choisir : ${ch.label}`, 'warning');
+        return;
+      }
+    }
+
+    const choicesSelected = Object.entries(pmChoicesState).map(([cid, v]) => {
+      const opt = JSON.parse(v) as ChoiceOption;
+      return { choice_id: cid, option_id: opt.id, option_name: opt.name, price_modifier: opt.price_modifier };
+    });
+
+    const suppsSelected = [...pmSuppsState].map(id => {
+      const s = supplements.find(x => x.id === id)!;
+      return { id: s.id, name: s.name, price: s.price };
+    });
+
+    cart.push({
+      id: currentProduct.id,
+      nom: currentProduct.nom,
+      prix: pmUnitPrice(),
+      quantite: pmQty,
+      supplements: suppsSelected,
+      removed: [...pmRemovedState],
+      choices: choicesSelected,
+    });
+
+    playAddToCartSound();
+    dialog('productModal').close();
+    renderCart();
+    showToast(`${currentProduct.nom} ajouté`, 'success');
+  });
+
+  // ── Panier ────────────────────────────────────
+  function cartTotal(): number {
+    return cart.reduce((s, i) => s + i.prix * i.quantite, 0);
+  }
+
+  function renderCartItem(c: CartItem, idx: number, container: HTMLElement) {
+    const row = document.createElement('div');
+    row.className = 'card bg-base-200 shadow-sm';
+
+    const details: string[] = [];
+    c.choices.forEach(ch => details.push(`• ${ch.option_name}`));
+    c.supplements.forEach(s  => details.push(`+ ${s.name}`));
+    if (c.removed.length) details.push(`Sans : ${c.removed.join(', ')}`);
+
+    row.innerHTML = `
+      <div class="card-body p-3 gap-1">
+        <div class="flex justify-between items-start gap-2">
+          <p class="font-semibold text-sm leading-snug flex-1">${c.quantite}× ${esc(c.nom)}</p>
+          <p class="font-bold text-sm text-primary tabular-nums shrink-0">${fmt(c.prix * c.quantite)}</p>
+        </div>
+        ${details.length ? `<p class="text-xs text-base-content/50">${details.map(esc).join(' ')}</p>` : ''}
+        <div class="flex items-center gap-1 mt-1">
+          <button class="btn btn-xs btn-ghost" data-cart-dec="${idx}">−</button>
+          <span class="text-xs font-bold w-5 text-center tabular-nums">${c.quantite}</span>
+          <button class="btn btn-xs btn-ghost" data-cart-inc="${idx}">+</button>
+          <button class="btn btn-xs btn-ghost text-error ml-auto" data-cart-del="${idx}">✕</button>
+        </div>
+      </div>
+    `;
+    container.appendChild(row);
+  }
+
+  function renderCart() {
+    const empty  = '<p class="text-center text-base-content/50 py-8 text-sm">Vide</p>';
+    const total  = cartTotal();
+    const count  = cart.reduce((s, i) => s + i.quantite, 0);
+    const hasItems = cart.length > 0;
+
+    // Desktop sidebar
+    const cartList = q('cartList');
+    const drawerList = q('drawerCartList');
+    for (const el of [cartList, drawerList]) {
+      el.innerHTML = '';
+      if (!hasItems) { el.innerHTML = empty; continue; }
+      cart.forEach((c, i) => renderCartItem(c, i, el));
+    }
+
+    // Totaux desktop
+    q('cartTotal').textContent   = fmt(total);
+    q('drawerTotal').textContent = fmt(total);
+    const validateBtn  = q<HTMLButtonElement>('validateBtn');
+    const drawerValBtn = q<HTMLButtonElement>('drawerValidateBtn');
+    validateBtn.disabled  = !hasItems;
+    drawerValBtn.disabled = !hasItems;
+
+    // Mobile bar
+    q('mobileCartTotal').textContent = fmt(total);
+    if (hasItems) {
+      q('mobileCartSummary').textContent = `${count} article${count > 1 ? 's' : ''}`;
+      q('mobileCartCount').textContent   = String(count);
+      q('mobileCartCount').classList.remove('hidden');
+    } else {
+      q('mobileCartSummary').textContent = 'Vide';
+      q('mobileCartCount').classList.add('hidden');
+    }
+
+    // Sync selects type/table/notes
+    syncCartFields();
+
+    // Event listeners sur les boutons du panier
+    document.querySelectorAll<HTMLButtonElement>('[data-cart-dec],[data-cart-inc],[data-cart-del]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const dec = btn.dataset.cartDec;
+        const inc = btn.dataset.cartInc;
+        const del = btn.dataset.cartDel;
+        if (dec !== undefined) {
+          const i = parseInt(dec);
+          cart[i].quantite--;
+          if (cart[i].quantite <= 0) cart.splice(i, 1);
+          renderCart();
+        } else if (inc !== undefined) {
+          cart[parseInt(inc)].quantite++;
+          renderCart();
+        } else if (del !== undefined) {
+          cart.splice(parseInt(del), 1);
+          renderCart();
+        }
+      });
+    });
+  }
+
+  function syncCartFields() {
+    // Synchroniser les deux jeux de champs (desktop / drawer mobile)
+    const pairs: [string, string][] = [
+      ['cartType','drawerType'],
+      ['cartTable','drawerTable'],
+      ['cartNotes','drawerNotes'],
+    ];
+    pairs.forEach(([a, b]) => {
+      const elA = q<HTMLInputElement|HTMLSelectElement|HTMLTextAreaElement>(a);
+      const elB = q<HTMLInputElement|HTMLSelectElement|HTMLTextAreaElement>(b);
+      if (!elA || !elB) return;
+      elA.addEventListener('change', () => { elB.value = elA.value; });
+      elB.addEventListener('change', () => { elA.value = elB.value; });
+    });
+  }
+
+  function getCartForm(): { type: string; table: string; notes: string } {
+    // Préférer le drawer si ouvert, sinon sidebar
+    return {
+      type:  (q<HTMLSelectElement>('cartType')).value   || 'sur_place',
+      table: (q<HTMLInputElement>('cartTable')).value   || '',
+      notes: (q<HTMLTextAreaElement>('cartNotes')).value || '',
+    };
+  }
+
+  // Boutons vider
+  ['clearCartBtn','drawerClearBtn'].forEach(id => {
+    q(id)?.addEventListener('click', () => dialog('confirmClearModal').showModal());
+  });
+  q('confirmClearYes')?.addEventListener('click', () => {
+    dialog('confirmClearModal').close();
+    cart = [];
+    renderCart();
+  });
+
+  // Bouton ouvrir drawer mobile
+  q('openCartBtn')?.addEventListener('click', () => dialog('cartDrawer').showModal());
+
+  // ── Validation commande ───────────────────────
+  function startValidation() {
+    if (!cart.length) return;
+    const form = getCartForm();
+    if (form.type === 'sur_place' && !form.table) {
+      showToast('Numéro de table requis', 'warning');
+      return;
+    }
+    const total = cartTotal();
+    q('payAmount').textContent = fmt(total);
+    dialog('payModal').showModal();
+  }
+
+  ['validateBtn','drawerValidateBtn'].forEach(id => {
+    q(id)?.addEventListener('click', startValidation);
+  });
+
+  // Choix paiement
+  q('payCard')?.addEventListener('click', () => {
+    dialog('payModal').close();
+    finalizeOrder('comptoir');
+  });
+  q('payCash')?.addEventListener('click', () => {
+    dialog('payModal').close();
+    const total = cartTotal();
+    q('cashDue').textContent = fmt(total);
+    (q<HTMLInputElement>('cashGiven')).value = '';
+    q('cashChangeWrap').classList.add('hidden');
+    q<HTMLButtonElement>('cashConfirm').disabled = true;
+    dialog('cashModal').showModal();
+  });
+
+  // Calcul rendu espèces
+  q('cashGiven')?.addEventListener('input', () => {
+    const given  = parseFloat((q<HTMLInputElement>('cashGiven')).value) || 0;
+    const total  = cartTotal();
+    const change = given - total;
+    const btn    = q<HTMLButtonElement>('cashConfirm');
+    if (change >= 0) {
+      q('cashChange').textContent = fmt(change);
+      q('cashChangeWrap').classList.remove('hidden');
+      btn.disabled = false;
+    } else {
+      q('cashChangeWrap').classList.add('hidden');
+      btn.disabled = true;
+    }
+  });
+
+  q('cashConfirm')?.addEventListener('click', () => {
+    dialog('cashModal').close();
+    finalizeOrder('especes');
+  });
+
+  // ── Créer la commande ─────────────────────────
+  async function finalizeOrder(payMode: string) {
+    const form = getCartForm();
+    const total = cartTotal();
+
+    const orderData = {
+      type:    form.type,
+      client:  { nom: 'Caisse', prenom: '', telephone: 'N/A', email: '' },
+      articles: cart.map(i => ({
+        id: i.id, nom: i.nom, prix: i.prix, quantite: i.quantite,
+        supplements: i.supplements,
+        removed_ingredients: i.removed,
+        choices_selected: i.choices,
+      })),
+      sous_total:       total,
+      frais_livraison:  0,
+      prix_total:       total,
+      notes:            form.notes,
+      numero_table:     form.type === 'sur_place' ? form.table : null,
+      paiement:         { mode: payMode, statut: 'paye' },
+      source:           'pos',
+    };
+
+    try {
+      const res = await apiFetch<{ id: string; numero: string }>('/commandes', {
+        method: 'POST', headers: authH(), body: JSON.stringify(orderData),
+      });
+
+      showToast(`Commande ${res.numero} créée`, 'success');
+      playBeep(1320, 0.2, 0.4);
+
+      // Impression auto
+      try {
+        await apiFetch('/print-ticket', {
+          method: 'POST', headers: authH(), body: JSON.stringify({ commande_id: res.id }),
+        });
+      } catch { /* silencieux — pas critique */ }
+
+      // Reset
+      cart = [];
+      renderCart();
+      (q<HTMLSelectElement>('cartType')).value   = 'sur_place';
+      (q<HTMLInputElement>('cartTable')).value   = '';
+      (q<HTMLTextAreaElement>('cartNotes')).value = '';
+      (q<HTMLSelectElement>('drawerType')).value   = 'sur_place';
+      (q<HTMLInputElement>('drawerTable')).value   = '';
+      (q<HTMLTextAreaElement>('drawerNotes')).value = '';
+      dialog('cartDrawer').close();
+
+    } catch (err: unknown) {
+      showToast(`Erreur : ${err instanceof Error ? err.message : String(err)}`, 'error');
+    }
+  }
+
+  // ── Commandes (Kanban) ─────────────────────────
+  async function loadCommandes(silent = false) {
+    try {
+      const data = await apiFetch<{ commandes: Commande[] }>(
+        '/commandes?per_page=100&statut_ne=terminee&statut_ne=annulee',
+        { headers: authH() }
+      );
+      const newList = data.commandes ?? [];
+
+      // Détecter nouvelles commandes
+      const newIds = new Set(newList.map(c => c.id));
+      let hasNew = false;
+      newList.forEach(c => {
+        if (!lastCommandesIds.has(c.id) && c.statut === 'nouvelle') hasNew = true;
+      });
+      if (hasNew && lastCommandesIds.size > 0) {
+        playNewOrderSound();
+        showToast('🔔 Nouvelle commande reçue !', 'info');
+      }
+      lastCommandesIds = newIds;
+      commandes = newList.sort((a, b) =>
+        new Date(a.date_creation).getTime() - new Date(b.date_creation).getTime()
+      );
+
+      renderKanban();
+      updateCommandesBadge();
+    } catch { /* silencieux si refresh auto */ }
+  }
+
+  function updateCommandesBadge() {
+    const count = commandes.filter(c => c.statut === 'nouvelle').length;
+    const badge = q('tabCommandesBadge');
+    const nb    = q('newOrdersBadge');
+    const cnt   = q('newOrdersCount');
+
+    if (count > 0) {
+      badge.textContent = String(count);
+      badge.classList.remove('hidden');
+      nb.classList.remove('hidden');
+      cnt.textContent = String(count);
+    } else {
+      badge.classList.add('hidden');
+      nb.classList.add('hidden');
+    }
+
+    q('cntNouvelles').textContent = String(commandes.filter(c => c.statut === 'nouvelle').length);
+    q('cntPrepa').textContent     = String(commandes.filter(c => c.statut === 'en_preparation').length);
+    q('cntPretes').textContent    = String(commandes.filter(c => ['prete','en_livraison'].includes(c.statut)).length);
+  }
+
+  const TYPE_INFO: Record<string,{label:string;badge:string}> = {
+    sur_place: { label:'Sur place', badge:'badge-success'  },
+    emporter:  { label:'À emporter',badge:'badge-info'     },
+    livraison: { label:'Livraison', badge:'badge-primary'  },
+  };
+
+  function renderKanbanCol(
+    statuts: string[],
+    containerId: string
+  ) {
+    const el = q(containerId);
+    el.innerHTML = '';
+    const list = commandes.filter(c => statuts.includes(c.statut));
+
+    if (!list.length) {
+      el.innerHTML = '<p class="text-center text-base-content/40 text-sm py-4">Aucune</p>';
+      return;
+    }
+
+    list.forEach(cmd => {
+      const ti   = TYPE_INFO[cmd.type] ?? { label: cmd.type, badge: 'badge-ghost' };
+      const el_  = elapsed(cmd.date_creation);
+      const count = cmd.articles.reduce((s: number, a: any) => s + (a.quantite ?? 1), 0);
+
+      const card = document.createElement('div');
+      card.className = `order-card card bg-base-100 shadow${cmd.statut === 'nouvelle' ? ' new-pulse' : ''}`;
+      card.innerHTML = `
+        <div class="card-body p-3 gap-1.5">
+          <div class="flex justify-between items-start">
+            <h3 class="font-mono font-black text-base">#${esc(cmd.numero)}</h3>
+            <span class="text-xs ${el_.urgent ? 'text-error font-bold' : 'text-base-content/50'}">${esc(el_.text)}</span>
+          </div>
+          <div class="flex gap-1.5 flex-wrap">
+            <span class="badge ${ti.badge} badge-sm">${ti.label}</span>
+            ${cmd.numero_table ? `<span class="badge badge-ghost badge-sm">Table ${esc(cmd.numero_table)}</span>` : ''}
+          </div>
+          <div class="flex justify-between items-center text-sm">
+            <span class="text-base-content/60">${count} article${count > 1 ? 's' : ''}</span>
+            <span class="font-bold text-primary tabular-nums">${fmt(cmd.prix_total)}</span>
+          </div>
+          ${cmd.notes ? '<p class="text-xs text-warning truncate">⚠️ Instructions</p>' : ''}
+        </div>
+      `;
+      card.addEventListener('click', () => openOrderModal(cmd));
+      el.appendChild(card);
+    });
+  }
+
+  function renderKanban() {
+    renderKanbanCol(['nouvelle'],                 'colNouvelles');
+    renderKanbanCol(['en_preparation'],           'colPrepa');
+    renderKanbanCol(['prete','en_livraison'],     'colPretes');
+  }
+
+  // ── Modal détail commande ─────────────────────
+  function openOrderModal(cmd: Commande) {
+    currentOrderId = cmd.id;
+    q('omNumero').textContent = `#${cmd.numero}`;
+    q('omDate').textContent   = fmtDate(cmd.date_creation);
+    const ti = TYPE_INFO[cmd.type] ?? { label: cmd.type, badge: 'badge-ghost' };
+    q('omType').textContent   = ti.label;
+    q('omType').className     = `badge badge-lg ${ti.badge}`;
+    q('omClient').textContent = `${(cmd.client as any)?.prenom ?? ''} ${(cmd.client as any)?.nom ?? 'N/A'}`;
+
+    if (cmd.numero_table) {
+      q('omTableRow').classList.remove('hidden');
+      q('omTable').textContent = cmd.numero_table;
+    } else {
+      q('omTableRow').classList.add('hidden');
+    }
+
+    // Articles
+    const artEl = q('omArticles');
+    artEl.innerHTML = '';
+    cmd.articles.forEach((a: any) => {
+      const row = document.createElement('div');
+      row.className = 'flex justify-between items-start text-sm';
+      const details: string[] = [];
+      a.choices_selected?.forEach((c: any) => details.push(`• ${c.option_name}`));
+      a.supplements?.forEach((s: any) => details.push(`+ ${s.name}`));
+      a.removed_ingredients?.forEach((r: string) => details.push(`Sans ${r}`));
+      row.innerHTML = `
+        <div class="flex-1">
+          <p class="font-semibold">${a.quantite}× ${esc(a.nom)}</p>
+          ${details.length ? `<p class="text-xs text-base-content/50">${details.map(esc).join(' ')}</p>` : ''}
+        </div>
+        <p class="font-bold tabular-nums ml-3">${fmt(a.prix * a.quantite)}</p>
+      `;
+      artEl.appendChild(row);
+    });
+
+    const notesEl = q('omNotes');
+    if (cmd.notes) {
+      notesEl.textContent = `⚠️ ${cmd.notes}`;
+      notesEl.classList.remove('hidden');
+    } else {
+      notesEl.classList.add('hidden');
+    }
+
+    q('omTotal').textContent = fmt(cmd.prix_total);
+    (q<HTMLSelectElement>('omStatut')).value = cmd.statut;
+    dialog('orderModal').showModal();
+  }
+
+  q('omConfirmStatus')?.addEventListener('click', async () => {
+    if (!currentOrderId) return;
+    const statut = (q<HTMLSelectElement>('omStatut')).value;
+    try {
+      await apiFetch(`/commandes/${encodeURIComponent(currentOrderId)}`, {
+        method: 'PUT', headers: authH(), body: JSON.stringify({ statut }),
+      });
+      dialog('orderModal').close();
+      await loadCommandes(true);
+      showToast('Statut mis à jour', 'success');
+    } catch (err: unknown) {
+      showToast(`Erreur : ${err instanceof Error ? err.message : ''}`, 'error');
+    }
+  });
+
+  q('omPrint')?.addEventListener('click', async () => {
+    if (!currentOrderId) return;
+    const btn = q<HTMLButtonElement>('omPrint');
+    btn.disabled = true;
+    try {
+      await apiFetch('/print-ticket', {
+        method: 'POST', headers: authH(),
+        body: JSON.stringify({ commande_id: currentOrderId }),
+      });
+      showToast('Ticket envoyé à l\'imprimante', 'success');
+    } catch (err: unknown) {
+      showToast(`Impression impossible : ${err instanceof Error ? err.message : ''}`, 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  // ── Stock ─────────────────────────────────────
+  function renderStock() {
+    const tbody = q('stockBody');
+    tbody.innerHTML = '';
+    if (!products.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="text-center py-8 text-base-content/50">Chargement…</td></tr>';
+      loadMenu().then(() => renderStock());
+      return;
+    }
+    products.forEach(p => {
+      const catName = categories.find(c => c.id === p.category)?.name ?? p.category ?? '—';
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="font-semibold text-sm">${esc(p.nom)}</td>
+        <td class="text-xs text-base-content/60">${esc(catName)}</td>
+        <td class="tabular-nums font-bold text-sm">${fmt(p.prix)}</td>
+        <td>
+          <span class="badge badge-sm ${p.disponible ? 'badge-success' : 'badge-error'}">
+            ${p.disponible ? 'Dispo' : 'Épuisé'}
+          </span>
+        </td>
+        <td>
+          <button class="btn btn-xs ${p.disponible ? 'btn-error' : 'btn-success'} btn-outline"
+            data-stocktoggle="${esc(p.id)}">
+            ${p.disponible ? 'Épuiser' : 'Remettre'}
+          </button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    tbody.querySelectorAll<HTMLButtonElement>('[data-stocktoggle]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.stocktoggle!;
+        const p  = products.find(x => x.id === id);
+        if (!p) return;
+        try {
+          await apiFetch(`/menu/${encodeURIComponent(id)}`, {
+            method: 'PUT', headers: authH(),
+            body: JSON.stringify({ disponible: !p.disponible }),
+          });
+          await loadMenu();
+          renderStock();
+          showToast(`${p.nom} ${p.disponible ? 'épuisé' : 'remis en stock'}`, 'info');
+        } catch (err: unknown) {
+          showToast(`Erreur : ${err instanceof Error ? err.message : ''}`, 'error');
+        }
+      });
+    });
+  }
+
+  // ── Sound toggle ──────────────────────────────
+  q('soundToggle')?.addEventListener('click', () => {
+    soundEnabled = !soundEnabled;
+    q('soundToggle').textContent = soundEnabled ? '🔔' : '🔕';
+    showToast(soundEnabled ? 'Son activé' : 'Son désactivé', 'info');
+  });
+
+  // Clic badge nouvelles commandes → aller aux commandes
+  q('newOrdersBadge')?.addEventListener('click', () => {
+    document.querySelector<HTMLButtonElement>('[data-tab="commandes"]')?.click();
+  });
+
+  // ── Splash screen ─────────────────────────────
+  q('splashBtn')?.addEventListener('click', () => {
+    // Débloquer l'audio iOS au premier geste
+    unlockAudio();
+
+    q('splash').style.transition = 'opacity 0.3s';
+    q('splash').style.opacity    = '0';
+    setTimeout(() => {
+      q('splash').style.display = 'none';
+      q('app').classList.remove('hidden');
+      q('app').classList.add('flex');
+    }, 300);
+  });
+
+  // ── Polling ───────────────────────────────────
+  function startPolling() {
+    stopPolling();
+    pollTimer = setInterval(() => {
+      const activeTab = document.querySelector<HTMLButtonElement>('.tab.tab-active')?.dataset.tab;
+      if (activeTab === 'commandes') loadCommandes(true);
+    }, 15_000);
+    // Toujours surveiller les nouvelles commandes en arrière-plan
+    setInterval(() => loadCommandes(true), 30_000);
+  }
+
+  function stopPolling() {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  }
+
+  // ── PWA Service Worker (manuel, compatible Astro 6) ─
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js', { scope: '/' })
+        .then(reg => {
+          // Auto-update silencieux
+          reg.addEventListener('updatefound', () => {
+            reg.installing?.addEventListener('statechange', (e) => {
+              if ((e.target as ServiceWorker).state === 'installed'
+                  && navigator.serviceWorker.controller) {
+                showToast('Mise à jour disponible — rechargez pour appliquer', 'info');
+              }
+            });
+          });
+        })
+        .catch(() => {}); // Silencieux si SW non supporté
+    });
+  }
+
+  // ── Init ──────────────────────────────────────
+  function init() {
+    initAudio();
+    initTabs();
+    loadMenu();
+    renderCart();
+    startPolling();
+  }
+
+  document.addEventListener('astro:page-load', init);
+  window.addEventListener('beforeunload', stopPolling);
+  init();
+</script>

@@ -1,675 +1,569 @@
 ---
 // src/components/ProductModal.astro
-// ============================================
-// 📝 CMDOLA - Modal détails produit
-// ============================================
-
-import "../assets/app.css";
+// Modal produit — DaisyUI-native, thème-compatible, zéro define:vars
+import '../assets/app.css';
 
 interface Props {
   id: string;
 }
-
 const { id } = Astro.props;
 ---
 
-<dialog id={`modal-${id}`} class="modal modal-optimized">
-  <div class="modal-box modal-box-responsive max-w-2xl">
-    
+<dialog
+  id={`modal-${id}`}
+  class="modal modal-bottom sm:modal-middle"
+  aria-modal="true"
+  data-modal-id={id}
+>
+  <div class="modal-box p-0 overflow-hidden max-w-lg w-full">
+
     <!-- Bouton fermer -->
     <form method="dialog">
-      <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2 z-10">✕</button>
+      <button
+        class="btn btn-sm btn-circle btn-ghost absolute right-3 top-3 z-20 bg-base-100/80 backdrop-blur-sm"
+        aria-label="Fermer"
+      >✕</button>
     </form>
 
-    <!-- Contenu du modal (sera rempli dynamiquement) -->
-    <div id={`modal-content-${id}`} class="modal-content-scroll space-y-4">
-      <!-- Loading spinner -->
-      <div class="flex justify-center py-8">
-        <span class="loading loading-spinner loading-lg"></span>
+    <!-- Zone image (hauteur fixe, image en cover) -->
+    <div
+      id={`modal-img-${id}`}
+      class="modal-img-zone w-full bg-base-200 relative overflow-hidden"
+      style="height: 220px;"
+    >
+      <!-- Placeholder affiché avant le chargement -->
+      <div class="absolute inset-0 flex items-center justify-center text-6xl text-base-content/10 select-none">
+        🍽️
+      </div>
+    </div>
+
+    <!-- Corps scrollable -->
+    <div
+      id={`modal-body-${id}`}
+      class="modal-body-scroll p-5 overflow-y-auto"
+      style="max-height: calc(100dvh - 280px); max-height: calc(100vh - 280px);"
+    >
+      <!-- Spinner initial -->
+      <div class="flex justify-center py-10">
+        <span class="loading loading-spinner loading-lg text-primary"></span>
       </div>
     </div>
 
   </div>
+
+  <!-- Backdrop cliquable pour fermer -->
   <form method="dialog" class="modal-backdrop">
-    <button>close</button>
+    <button>fermer</button>
   </form>
 </dialog>
 
+<!-- Toast de validation (positionné en haut de l'écran) -->
+<div id={`modal-toast-${id}`} class="modal-toast-zone" aria-live="assertive"></div>
+
 <style>
-  /* ============================================
-   * 🎨 MODAL RESPONSIVE OPTIMISÉ
-   * ============================================ */
-  
-  /* Variables pour les safe areas */
-  .modal-optimized {
-    --modal-margin-top: max(1rem, env(safe-area-inset-top));
-    --modal-margin-bottom: max(1rem, env(safe-area-inset-bottom));
-    --modal-margin-horizontal: max(1rem, env(safe-area-inset-left), env(safe-area-inset-right));
+  /* ── Animation d'entrée ────────────────────── */
+  .modal[open] .modal-box {
+    animation: modal-pop 0.22s cubic-bezier(0.34, 1.4, 0.64, 1);
+  }
+  @keyframes modal-pop {
+    from { opacity: 0; transform: scale(0.96) translateY(6px); }
+    to   { opacity: 1; transform: scale(1)    translateY(0); }
   }
 
-  /* Container principal de la modal */
-  .modal-box-responsive {
-    /* Hauteur max adaptative : 90% de la hauteur visible - marges */
-    max-height: calc(90vh - var(--modal-margin-top) - var(--modal-margin-bottom));
-    
-    /* Sur mobile, on utilise la hauteur réelle (--vh définie dans menu.astro) */
-    max-height: calc(90 * var(--vh, 1vh) - var(--modal-margin-top) - var(--modal-margin-bottom));
-    
-    /* Largeur adaptative */
-    width: calc(100% - (var(--modal-margin-horizontal) * 2));
-    max-width: 42rem; /* 2xl */
-    
-    /* Position centrée avec marges */
-    margin: var(--modal-margin-top) auto var(--modal-margin-bottom);
-    
-    /* Structure flex pour gérer le scroll */
+  /* ── Image zone ─────────────────────────────── */
+  .modal-img-zone img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  /* ── Dots carousel ──────────────────────────── */
+  .carousel-dots {
+    position: absolute;
+    bottom: 8px;
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    z-index: 10;
+  }
+  .carousel-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 99px;
+    border: none;
+    background: oklch(var(--bc) / 0.3);
+    cursor: pointer;
+    padding: 0;
+    transition: width 0.2s, background 0.2s;
+  }
+  .carousel-dot.active {
+    width: 18px;
+    background: oklch(var(--p));
+  }
+
+  /* ── Corps scrollable ───────────────────────── */
+  .modal-body-scroll {
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    scrollbar-color: oklch(var(--bc) / 0.15) transparent;
+  }
+  .modal-body-scroll::-webkit-scrollbar { width: 4px; }
+  .modal-body-scroll::-webkit-scrollbar-thumb {
+    background: oklch(var(--bc) / 0.15);
+    border-radius: 99px;
+  }
+
+  /* ── Lignes option ──────────────────────────── */
+  .opt-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.5rem 0.5rem;
+    border-radius: 0.5rem;
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+  .opt-row:hover  { background: oklch(var(--b2)); }
+  .opt-row:active { background: oklch(var(--b3)); }
+
+  /* ── Toast zone ─────────────────────────────── */
+  .modal-toast-zone {
+    position: fixed;
+    top: 1rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 9999;
+    pointer-events: none;
     display: flex;
     flex-direction: column;
-    
-    /* Empêcher le débordement */
-    overflow: hidden;
-    
-    /* Padding réduit sur mobile */
-    padding: 1.5rem;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 260px;
   }
 
-  /* Zone scrollable du contenu */
-  .modal-content-scroll {
-    /* Permettre le scroll uniquement sur le contenu */
-    overflow-y: auto;
-    overflow-x: hidden;
-    
-    /* Smooth scroll */
-    -webkit-overflow-scrolling: touch;
-    scroll-behavior: smooth;
-    
-    /* Flex pour occuper l'espace disponible */
-    flex: 1;
-    
-    /* Masquer la scrollbar sur mobile tout en gardant le scroll */
-    scrollbar-width: thin;
-    scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+  /* ── Touch targets ──────────────────────────── */
+  @media (pointer: coarse) {
+    .opt-row { min-height: 44px; }
+    .modal-body-scroll button { min-height: 44px; }
   }
 
-  /* Scrollbar personnalisée (Webkit) */
-  .modal-content-scroll::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  .modal-content-scroll::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .modal-content-scroll::-webkit-scrollbar-thumb {
-    background: rgba(0, 0, 0, 0.2);
-    border-radius: 3px;
-  }
-
-  .modal-content-scroll::-webkit-scrollbar-thumb:hover {
-    background: rgba(0, 0, 0, 0.3);
-  }
-
-  /* ============================================
-   * 📱 RESPONSIVE MOBILE
-   * ============================================ */
-  
+  /* ── Mobile bottom sheet ────────────────────── */
   @media (max-width: 640px) {
-    .modal-box-responsive {
-      /* Utiliser presque toute la hauteur disponible sur mobile */
-      max-height: calc(92 * var(--vh, 1vh) - var(--modal-margin-top) - var(--modal-margin-bottom));
-      
-      /* Marges réduites */
-      --modal-margin-top: max(0.5rem, env(safe-area-inset-top));
-      --modal-margin-bottom: max(0.5rem, env(safe-area-inset-bottom));
-      --modal-margin-horizontal: max(0.5rem, env(safe-area-inset-left), env(safe-area-inset-right));
-      
-      /* Padding réduit */
-      padding: 1rem;
-      
-      /* Pleine largeur avec petites marges */
-      width: calc(100% - 1rem);
-      max-width: calc(100% - 1rem);
-    }
-
-    /* Réduire les espacements internes sur mobile */
-    .modal-content-scroll {
-      gap: 0.75rem;
-    }
-
-    /* Ajuster les éléments internes */
-    .modal-content-scroll .space-y-4 > * + * {
-      margin-top: 0.75rem;
-    }
-  }
-
-  /* ============================================
-   * 📐 ORIENTATION LANDSCAPE (petits écrans)
-   * ============================================ */
-  
-  @media (max-width: 915px) and (orientation: landscape) {
-    .modal-box-responsive {
-      /* Utiliser davantage la hauteur en paysage */
-      max-height: calc(95 * var(--vh, 1vh) - var(--modal-margin-top) - var(--modal-margin-bottom));
-      
-      /* Marges minimales */
-      --modal-margin-top: max(0.25rem, env(safe-area-inset-top));
-      --modal-margin-bottom: max(0.25rem, env(safe-area-inset-bottom));
-      
-      /* Padding réduit */
-      padding: 0.75rem;
-    }
-  }
-
-  /* ============================================
-   * 🎯 OPTIMISATIONS CONTENU
-   * ============================================ */
-  
-  /* Images du carousel plus compactes sur mobile */
-  @media (max-width: 640px) {
-    .modal-content-scroll .carousel {
-      height: 12rem !important; /* 192px */
-    }
-    
-    .modal-content-scroll .carousel img {
-      object-fit: cover;
-    }
-  }
-
-  /* Boutons du carousel plus petits sur mobile */
-  @media (max-width: 640px) {
-    .modal-content-scroll .btn-circle {
-      width: 2rem;
-      height: 2rem;
-      min-height: 2rem;
-      font-size: 0.875rem;
-    }
-  }
-
-  /* Dividers plus compacts */
-  @media (max-width: 640px) {
-    .modal-content-scroll .divider {
-      margin-top: 0.5rem;
-      margin-bottom: 0.5rem;
-    }
-  }
-
-  /* Badges plus petits sur mobile */
-  @media (max-width: 640px) {
-    .modal-content-scroll .badge {
-      font-size: 0.75rem;
-      padding: 0.25rem 0.5rem;
-    }
-  }
-
-  /* ============================================
-   * 🔧 FIX iOS & ANDROID
-   * ============================================ */
-  
-  /* Éviter le bounce sur iOS */
-  .modal-content-scroll {
-    overscroll-behavior: contain;
-  }
-
-  /* Fix pour le backdrop sur mobile */
-  @media (max-width: 640px) {
-    .modal-backdrop {
-      background-color: rgba(0, 0, 0, 0.5);
-    }
-  }
-
-  /* Animation d'ouverture fluide */
-  .modal-optimized[open] {
-    animation: modal-appear 0.2s ease-out;
-  }
-
-  @keyframes modal-appear {
-    from {
-      opacity: 0;
-      transform: scale(0.95);
-    }
-    to {
-      opacity: 1;
-      transform: scale(1);
-    }
-  }
-
-  /* ============================================
-   * 🌓 DARK MODE
-   * ============================================ */
-  
-  @media (prefers-color-scheme: dark) {
-    .modal-content-scroll::-webkit-scrollbar-thumb {
-      background: rgba(255, 255, 255, 0.2);
-    }
-
-    .modal-content-scroll::-webkit-scrollbar-thumb:hover {
-      background: rgba(255, 255, 255, 0.3);
-    }
+    .modal-box { border-radius: 1rem 1rem 0 0 !important; }
   }
 </style>
 
-<script define:vars={{ modalId: id }}>
-  // Stock les données du produit chargé
-  let productData = null;
-  let selectedSupplements = [];
-  let removedIngredients = [];
+<!--
+  Script standard (PAS define:vars, PAS is:inline)
+  → Astro le bundle en TypeScript, dédupliqué.
+  L'ID du modal est lu depuis data-modal-id sur le <dialog>.
+-->
+<script>
+  // Récupère tous les modaux de la page et les initialise
+  function initModals() {
+    document.querySelectorAll<HTMLDialogElement>('dialog[data-modal-id]').forEach(modal => {
+      // Éviter le double-init
+      if (modal.dataset.initialized) return;
+      modal.dataset.initialized = '1';
 
-  // Fonction pour ouvrir le modal et charger les données
-  window.openProductModal = async function(productId) {
-    console.log('🔍 Ouverture modal pour produit:', productId);
-    
-    const modal = document.getElementById(`modal-${productId}`);
-    const modalContent = document.getElementById(`modal-content-${productId}`);
-    
-    if (!modal || !modalContent) {
-      console.error('❌ Modal ou modalContent non trouvé');
-      return;
-    }
+      const MODAL_ID  = modal.dataset.modalId!;
+      const imgZone   = document.getElementById(`modal-img-${MODAL_ID}`)!;
+      const body      = document.getElementById(`modal-body-${MODAL_ID}`)!;
+      const toastZone = document.getElementById(`modal-toast-${MODAL_ID}`)!;
 
-    // Ouvrir le modal
-    modal.showModal();
+      let currentProduct: Record<string, any> | null = null;
+      let currentImages: string[] = [];
+      let currentImgIdx = 0;
 
-    // Charger les données du produit
-    try {
-      // Récupérer depuis le DOM (data attributes)
-      const productCard = document.querySelector(`[data-product-id="${productId}"]`);
-      if (!productCard) {
-        console.error('❌ ProductCard non trouvée pour:', productId);
-        return;
+      // ── Toast ───────────────────────────────────
+      function toast(msg: string, type: 'warning' | 'error' | 'success' = 'warning') {
+        if (!toastZone) return;
+        const el = document.createElement('div');
+        el.className = `alert alert-${type} shadow-lg pointer-events-auto text-sm py-2 px-4 rounded-xl`;
+        el.textContent = msg;
+        toastZone.appendChild(el);
+        setTimeout(() => el.remove(), 3500);
       }
 
-      console.log('📦 Data attributes trouvés:', {
-        name: productCard.dataset.productName,
-        supplements: productCard.dataset.productSupplements,
-        removableIngredients: productCard.dataset.productRemovableingredients
+      // ── Image zone ──────────────────────────────
+      function renderImages(images: string[], nom: string) {
+        imgZone.innerHTML = '';
+
+        if (!images.length) {
+          imgZone.innerHTML = '<div class="absolute inset-0 flex items-center justify-center text-6xl text-base-content/10">🍽️</div>';
+          return;
+        }
+
+        currentImages = images;
+        currentImgIdx = 0;
+
+        // Image principale
+        const img = document.createElement('img');
+        img.src     = images[0];
+        img.alt     = nom;
+        img.loading = 'lazy';
+        img.decoding = 'async';
+        imgZone.appendChild(img);
+
+        if (images.length > 1) {
+          // Dots
+          const dots = document.createElement('div');
+          dots.className = 'carousel-dots';
+
+          images.forEach((src, i) => {
+            const dot = document.createElement('button');
+            dot.className = `carousel-dot${i === 0 ? ' active' : ''}`;
+            dot.setAttribute('aria-label', `Image ${i + 1}`);
+            dot.addEventListener('click', () => {
+              img.src = images[i];
+              currentImgIdx = i;
+              dots.querySelectorAll('.carousel-dot').forEach((d, j) => {
+                d.classList.toggle('active', j === i);
+              });
+            });
+            dots.appendChild(dot);
+          });
+
+          imgZone.appendChild(dots);
+        }
+      }
+
+      // ── Calcul prix ─────────────────────────────
+      function unitPrice(): number {
+        if (!currentProduct) return 0;
+        let p = currentProduct.prix as number;
+        body.querySelectorAll<HTMLInputElement>('.choice-radio:checked').forEach(r => {
+          p += parseFloat(r.dataset.priceModifier ?? '0');
+        });
+        body.querySelectorAll<HTMLInputElement>('.supp-cb:checked').forEach(c => {
+          p += parseFloat(c.dataset.price ?? '0');
+        });
+        return p;
+      }
+
+      function refreshPrice() {
+        const qty   = parseInt(body.querySelector<HTMLInputElement>('.qty-input')?.value ?? '1');
+        const total = unitPrice() * qty;
+        const el    = body.querySelector<HTMLElement>('.price-display');
+        if (el) {
+          el.textContent = new Intl.NumberFormat('fr-BE', {
+            style: 'currency', currency: 'EUR',
+          }).format(total);
+        }
+      }
+
+      // ── Rendu corps ─────────────────────────────
+      function renderBody(p: Record<string, any>) {
+        const prix = new Intl.NumberFormat('fr-BE', { style: 'currency', currency: 'EUR' }).format(p.prix as number);
+
+        // Construire le DOM proprement — pas de innerHTML avec template literals complexes
+        body.innerHTML = '';
+
+        // Titre + prix
+        const header = document.createElement('div');
+        header.className = 'flex items-start justify-between gap-3 mb-3';
+        header.innerHTML = `
+          <div class="flex-1 min-w-0">
+            <h3 class="text-xl font-bold leading-tight text-base-content">${escHtml(p.nom)}</h3>
+            ${p.description ? `<p class="text-sm text-base-content/60 mt-1 leading-relaxed">${escHtml(p.description)}</p>` : ''}
+          </div>
+          <span class="text-lg font-bold text-primary shrink-0 tabular-nums">${prix}</span>
+        `;
+        body.appendChild(header);
+
+        // Allergènes
+        const allergenes = (p.allergenes as string[]) ?? [];
+        if (allergenes.length) {
+          const row = document.createElement('div');
+          row.className = 'flex flex-wrap gap-1 mb-3';
+          allergenes.forEach(a => {
+            const badge = document.createElement('span');
+            badge.className = 'badge badge-warning badge-sm';
+            badge.textContent = `⚠️ ${a}`;
+            row.appendChild(badge);
+          });
+          body.appendChild(row);
+        }
+
+        // Séparateur
+        const divider = () => { const d = document.createElement('div'); d.className = 'divider my-2'; body.appendChild(d); };
+
+        // Choix obligatoires
+        const choices = (p.choices as any[]) ?? [];
+        if (choices.length) {
+          divider();
+          choices.forEach(choice => {
+            const wrap = document.createElement('div');
+            wrap.className = 'mb-3';
+
+            const label = document.createElement('p');
+            label.className = 'font-semibold text-sm mb-2';
+            label.innerHTML = `${escHtml(choice.label)}${choice.required ? ' <span class="text-error">*</span>' : ''}`;
+            wrap.appendChild(label);
+
+            const group = document.createElement('div');
+            group.className = 'space-y-1';
+            group.dataset.choiceGroup = choice.id;
+            group.dataset.required    = String(choice.required);
+
+            choice.options.forEach((opt: any) => {
+              const lbl = document.createElement('label');
+              lbl.className = 'opt-row';
+              const left = document.createElement('div');
+              left.className = 'flex items-center gap-2 min-w-0';
+
+              const radio = document.createElement('input');
+              radio.type      = 'radio';
+              radio.name      = `choice-${MODAL_ID}-${choice.id}`;
+              radio.className = 'radio radio-primary radio-sm choice-radio shrink-0';
+              radio.dataset.choiceId      = choice.id;
+              radio.dataset.optionId      = opt.id;
+              radio.dataset.optionName    = opt.name;
+              radio.dataset.priceModifier = String(opt.price_modifier);
+              radio.addEventListener('change', refreshPrice);
+
+              const span = document.createElement('span');
+              span.className   = 'text-sm truncate';
+              span.textContent = opt.name;
+
+              left.appendChild(radio);
+              left.appendChild(span);
+              lbl.appendChild(left);
+
+              if (opt.price_modifier !== 0) {
+                const badge = document.createElement('span');
+                badge.className   = 'badge badge-ghost badge-sm shrink-0';
+                badge.textContent = `${opt.price_modifier > 0 ? '+' : ''}${opt.price_modifier.toFixed(2)}€`;
+                lbl.appendChild(badge);
+              }
+
+              group.appendChild(lbl);
+            });
+
+            wrap.appendChild(group);
+            body.appendChild(wrap);
+          });
+        }
+
+        // Ingrédients retirables
+        const removable = (p.removable_ingredients as string[]) ?? [];
+        if (removable.length) {
+          divider();
+          const title = document.createElement('p');
+          title.className = 'font-semibold text-sm mb-2';
+          title.innerHTML = 'Retirer des ingrédients <span class="font-normal text-base-content/50">(gratuit)</span>';
+          body.appendChild(title);
+          const list = document.createElement('div');
+          list.className = 'space-y-1';
+          removable.forEach(ing => {
+            const lbl = document.createElement('label');
+            lbl.className = 'opt-row';
+            const left = document.createElement('div');
+            left.className = 'flex items-center gap-2';
+            const cb = document.createElement('input');
+            cb.type      = 'checkbox';
+            cb.className = 'checkbox checkbox-sm removable-cb';
+            cb.dataset.ingredient = ing;
+            const span = document.createElement('span');
+            span.className   = 'text-sm line-through decoration-error/70 decoration-2';
+            span.textContent = ing;
+            left.appendChild(cb);
+            left.appendChild(span);
+            lbl.appendChild(left);
+            list.appendChild(lbl);
+          });
+          body.appendChild(list);
+        }
+
+        // Suppléments
+        const allSupps: any[] = (window as any).allSupplements ?? [];
+        const suppIds = (p.supplements as string[]) ?? [];
+        const resolved = suppIds.map(sid => allSupps.find(s => s.id === sid)).filter(Boolean);
+        if (resolved.length) {
+          divider();
+          const title = document.createElement('p');
+          title.className   = 'font-semibold text-sm mb-2';
+          title.textContent = 'Suppléments';
+          body.appendChild(title);
+          const list = document.createElement('div');
+          list.className = 'space-y-1';
+          resolved.forEach(supp => {
+            const lbl = document.createElement('label');
+            lbl.className = 'opt-row';
+            const left = document.createElement('div');
+            left.className = 'flex items-center gap-2';
+            const cb = document.createElement('input');
+            cb.type      = 'checkbox';
+            cb.className = 'checkbox checkbox-primary checkbox-sm supp-cb';
+            cb.dataset.suppId = supp.id;
+            cb.dataset.name   = supp.name;
+            cb.dataset.price  = String(supp.price);
+            cb.addEventListener('change', refreshPrice);
+            const span = document.createElement('span');
+            span.className   = 'text-sm';
+            span.textContent = supp.name;
+            left.appendChild(cb);
+            left.appendChild(span);
+            lbl.appendChild(left);
+            const badge = document.createElement('span');
+            badge.className   = 'badge badge-ghost badge-sm shrink-0';
+            badge.textContent = `+${supp.price.toFixed(2)}€`;
+            lbl.appendChild(badge);
+            list.appendChild(lbl);
+          });
+          body.appendChild(list);
+        }
+
+        divider();
+
+        // Quantité + prix total
+        const qtyRow = document.createElement('div');
+        qtyRow.className = 'flex items-center justify-between gap-4 mb-4';
+        qtyRow.innerHTML = `
+          <div class="flex items-center gap-3">
+            <span class="font-semibold text-sm text-base-content">Quantité</span>
+            <div class="join">
+              <button type="button" class="btn btn-sm join-item btn-qty" data-delta="-1" aria-label="Diminuer">−</button>
+              <input
+                type="number"
+                class="input input-sm input-bordered join-item w-14 text-center qty-input"
+                value="1" min="1" max="99"
+                aria-label="Quantité"
+              />
+              <button type="button" class="btn btn-sm join-item btn-qty" data-delta="1" aria-label="Augmenter">+</button>
+            </div>
+          </div>
+          <div class="text-right">
+            <p class="text-xs text-base-content/50 mb-0.5">Total</p>
+            <p class="text-2xl font-bold text-primary price-display">${prix}</p>
+          </div>
+        `;
+        body.appendChild(qtyRow);
+
+        // Bouton CTA
+        const cta = document.createElement('button');
+        cta.type      = 'button';
+        cta.className = 'btn btn-primary btn-block gap-2';
+        cta.innerHTML = `
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/>
+          </svg>
+          Ajouter au panier
+        `;
+        cta.addEventListener('click', handleAddToCart);
+        body.appendChild(cta);
+
+        // Events quantité
+        body.querySelectorAll<HTMLButtonElement>('.btn-qty').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const input = body.querySelector<HTMLInputElement>('.qty-input')!;
+            input.value = String(Math.max(1, (parseInt(input.value) || 1) + parseInt(btn.dataset.delta ?? '0')));
+            refreshPrice();
+          });
+        });
+        body.querySelector('.qty-input')?.addEventListener('input', refreshPrice);
+
+        body.scrollTop = 0;
+      }
+
+      // ── Ajout panier ────────────────────────────
+      function handleAddToCart() {
+        if (!currentProduct) return;
+
+        // Valider choix obligatoires
+        const groups = body.querySelectorAll<HTMLElement>('[data-choice-group][data-required="true"]');
+        for (const group of groups) {
+          const cid     = group.dataset.choiceGroup!;
+          const checked = group.querySelector(`input[name="choice-${MODAL_ID}-${cid}"]:checked`);
+          if (!checked) {
+            const labelText = group.closest('div')?.querySelector('p')?.textContent?.replace('*','').trim() ?? 'un choix';
+            toast(`Veuillez choisir : ${labelText}`, 'warning');
+            group.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            return;
+          }
+        }
+
+        const qty = Math.max(1, parseInt(body.querySelector<HTMLInputElement>('.qty-input')?.value ?? '1'));
+
+        const selectedChoices: any[] = [];
+        body.querySelectorAll<HTMLInputElement>('.choice-radio:checked').forEach(r => {
+          selectedChoices.push({
+            choice_id:      r.dataset.choiceId,
+            option_id:      r.dataset.optionId,
+            option_name:    r.dataset.optionName,
+            price_modifier: parseFloat(r.dataset.priceModifier ?? '0'),
+          });
+        });
+
+        const selectedSupps: any[] = [];
+        body.querySelectorAll<HTMLInputElement>('.supp-cb:checked').forEach(c => {
+          selectedSupps.push({ id: c.dataset.suppId, name: c.dataset.name, price: parseFloat(c.dataset.price ?? '0') });
+        });
+
+        const removedIngr: string[] = [];
+        body.querySelectorAll<HTMLInputElement>('.removable-cb:checked').forEach(c => {
+          if (c.dataset.ingredient) removedIngr.push(c.dataset.ingredient);
+        });
+
+        const article = {
+          id:                  currentProduct.id,
+          nom:                 currentProduct.nom,
+          prix:                unitPrice(),
+          quantite:            qty,
+          choices_selected:    selectedChoices,
+          supplements:         selectedSupps,
+          removed_ingredients: removedIngr,
+        };
+
+        let cart: any[] = [];
+        try { cart = JSON.parse(localStorage.getItem('cart') ?? '[]'); } catch {}
+
+        const sig = (i: any) => JSON.stringify([i.id, i.choices_selected, i.supplements.map((s: any) => s.id), i.removed_ingredients]);
+        const idx = cart.findIndex(i => sig(i) === sig(article));
+        if (idx >= 0) { cart[idx].quantite += qty; } else { cart.push(article); }
+
+        localStorage.setItem('cart', JSON.stringify(cart));
+        window.dispatchEvent(new CustomEvent('cart-updated'));
+        modal.close();
+      }
+
+      // ── Helpers ──────────────────────────────────
+      function escHtml(str: string): string {
+        return String(str ?? '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;');
+      }
+
+      // ── Écoute événement d'ouverture ─────────────
+      document.addEventListener('open-product-modal', (e) => {
+        const product = (e as CustomEvent).detail as Record<string, any>;
+        currentProduct = product;
+        renderImages((product.images as string[]) ?? [], product.nom as string);
+        renderBody(product);
+        modal.showModal();
       });
 
-      const data = {
-        id: productId,
-        nom: productCard.dataset.productName || '',
-        description: productCard.dataset.productDescription || '',
-        prix: parseFloat(productCard.dataset.productPrice || '0'),
-        images: JSON.parse(productCard.dataset.productImages || '[]'),
-        supplements: JSON.parse(productCard.dataset.productSupplements || '[]'),
-        removable_ingredients: JSON.parse(productCard.dataset.productRemovableingredients || '[]'),
-        allergenes: JSON.parse(productCard.dataset.productAllergenes || '[]'),
-        category: productCard.dataset.category || '',
-        choices: JSON.parse(productCard.dataset.productChoices || '[]'),
-      };
-
-      console.log('✅ Données produit parsées:', data);
-      console.log('🌐 window.allSupplements:', window.allSupplements);
-
-      productData = data;
-      renderModalContent(productId, data);
-    } catch (error) {
-      console.error('❌ Erreur chargement produit:', error);
-      modalContent.innerHTML = '<p class="text-error">Erreur de chargement</p>';
-    }
-  };
-
-  // Fonction pour render le contenu du modal
-  function renderModalContent(productId, data) {
-    console.log('🎨 Rendering modal content pour:', productId, data);
-    
-    const modalContent = document.getElementById(`modal-content-${productId}`);
-    if (!modalContent) return;
-
-    const hasMultipleImages = data.images.length > 1;
-    const hasRemovableIngredients = data.removable_ingredients && data.removable_ingredients.length > 0;
-    const hasSupplements = data.supplements && data.supplements.length > 0;
-    
-    console.log('📊 Vérifications:', {
-      hasMultipleImages,
-      hasRemovableIngredients,
-      removableCount: data.removable_ingredients?.length || 0,
-      hasSupplements,
-      supplementsCount: data.supplements?.length || 0,
-      allSupplementsGlobal: window.allSupplements?.length || 0
+      // Reset à la fermeture
+      modal.addEventListener('close', () => {
+        currentProduct = null;
+        currentImages  = [];
+        currentImgIdx  = 0;
+        imgZone.innerHTML = '<div class="absolute inset-0 flex items-center justify-center text-6xl text-base-content/10 select-none">🍽️</div>';
+        body.innerHTML    = '<div class="flex justify-center py-10"><span class="loading loading-spinner loading-lg text-primary"></span></div>';
+      });
     });
-    
-    modalContent.innerHTML = `
-      <!-- Carousel images -->
-      ${data.images.length > 0 ? `
-        <div class="carousel w-full rounded-lg ${hasMultipleImages ? 'h-64' : 'h-48'}">
-          ${data.images.map((img, index) => `
-            <div id="slide-${productId}-${index}" class="carousel-item relative w-full">
-              <img src="${img}" class="w-full object-cover" alt="${data.nom}" loading="lazy" />
-              ${hasMultipleImages ? `
-                <div class="absolute flex justify-between transform -translate-y-1/2 left-5 right-5 top-1/2">
-                  <a href="#slide-${productId}-${index > 0 ? index - 1 : data.images.length - 1}" class="btn btn-circle btn-sm">❮</a>
-                  <a href="#slide-${productId}-${index < data.images.length - 1 ? index + 1 : 0}" class="btn btn-circle btn-sm">❯</a>
-                </div>
-              ` : ''}
-            </div>
-          `).join('')}
-        </div>
-        ${hasMultipleImages ? `
-          <div class="flex justify-center gap-2 py-2">
-            ${data.images.map((_, index) => `
-              <a href="#slide-${productId}-${index}" class="btn btn-xs btn-circle">${index + 1}</a>
-            `).join('')}
-          </div>
-        ` : ''}
-      ` : ''}
-
-      <!-- Titre et prix -->
-      <div>
-        <h3 class="text-xl sm:text-2xl font-bold">${data.nom}</h3>
-        <p class="text-sm text-base-content/70 mt-2">${data.description}</p>
-        ${data.allergenes.length > 0 ? `
-          <div class="flex flex-wrap gap-1 mt-2">
-            ${data.allergenes.map(allergen => `
-              <span class="badge badge-warning badge-sm">⚠️ ${allergen}</span>
-            `).join('')}
-          </div>
-        ` : ''}
-      </div>
-
-      <!-- Choix obligatoires -->
-      ${data.choices && data.choices.length > 0 ? `
-        <div class="divider"></div>
-        <div>
-          <h4 class="font-bold mb-3 text-sm sm:text-base">Choix obligatoires</h4>
-          <div class="space-y-4">
-            ${data.choices.map(choice => `
-              <div>
-                <label class="label">
-                  <span class="label-text font-semibold">
-                    ${choice.label}
-                    ${choice.required ? '<span class="text-error ml-1">*</span>' : ''}
-                  </span>
-                </label>
-                <div class="space-y-2" id="choice-${productId}-${choice.id}">
-                  ${choice.options.map(option => `
-                    <label class="flex items-center justify-between cursor-pointer p-2 rounded hover:bg-base-200 active:bg-base-300">
-                      <div class="flex items-center gap-2">
-                        <input 
-                          type="radio" 
-                          name="choice-${productId}-${choice.id}" 
-                          class="radio radio-primary radio-sm choice-input" 
-                          data-choice-id="${choice.id}"
-                          data-choice-required="${choice.required}"
-                          data-option-id="${option.id}"
-                          data-option-name="${option.name}"
-                          data-price-modifier="${option.price_modifier}"
-                          onchange="updatePrice('${productId}')"
-                        />
-                        <span class="text-sm">${option.name}</span>
-                      </div>
-                      ${option.price_modifier !== 0 ? `
-                        <span class="badge badge-ghost badge-sm">
-                          ${option.price_modifier > 0 ? '+' : ''}${option.price_modifier.toFixed(2)}€
-                        </span>
-                      ` : ''}
-                    </label>
-                  `).join('')}
-                </div>
-              </div>
-            `).join('')}
-          </div>
-        </div>
-      ` : ''}
-
-      <div class="divider"></div>
-
-      <!-- Ingrédients retirables -->
-      ${hasRemovableIngredients ? `
-        <div>
-          <h4 class="font-bold mb-2 text-sm sm:text-base">Retirer des ingrédients (gratuit)</h4>
-          <div class="space-y-2" id="removable-list-${productId}">
-            ${data.removable_ingredients.map(ingredient => `
-              <label class="flex items-center gap-2 cursor-pointer p-2 rounded hover:bg-base-200 active:bg-base-300">
-                <input 
-                  type="checkbox" 
-                  class="checkbox checkbox-sm" 
-                  data-removable-ingredient="${ingredient}"
-                />
-                <span class="line-through decoration-error decoration-2 text-sm">${ingredient}</span>
-              </label>
-            `).join('')}
-          </div>
-        </div>
-        <div class="divider"></div>
-      ` : ''}
-
-      <!-- Suppléments -->
-      ${hasSupplements ? `
-        <div>
-          <h4 class="font-bold mb-2 text-sm sm:text-base">Suppléments disponibles</h4>
-          <div class="space-y-2" id="supplements-list-${productId}">
-            ${data.supplements.map(suppId => {
-              // Chercher le supplément dans la liste globale
-              const supp = window.allSupplements?.find(s => s.id === suppId);
-              
-              if (!supp) {
-                console.warn('⚠️ Supplément non trouvé:', suppId);
-                return `
-                  <div class="text-sm text-warning">
-                    Supplément "${suppId}" non disponible
-                  </div>
-                `;
-              }
-              
-              return `
-                <label class="flex items-center justify-between cursor-pointer p-2 rounded hover:bg-base-200 active:bg-base-300">
-                  <div class="flex items-center gap-2">
-                    <input 
-                      type="checkbox" 
-                      class="checkbox checkbox-primary checkbox-sm" 
-                      data-supplement-id="${supp.id}"
-                      data-supplement-price="${supp.price}"
-                      onchange="updatePrice('${productId}')"
-                    />
-                    <span class="text-sm">${supp.name}</span>
-                  </div>
-                  <span class="badge badge-ghost badge-sm">+${supp.price.toFixed(2)}€</span>
-                </label>
-              `;
-            }).join('')}
-          </div>
-        </div>
-        <div class="divider"></div>
-      ` : ''}
-
-      <!-- Quantité et Prix total -->
-      <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-        <div class="flex items-center gap-3 sm:gap-4">
-          <span class="font-semibold text-sm sm:text-base">Quantité :</span>
-          <div class="join">
-            <button class="btn btn-sm join-item" onclick="changeQuantity('${productId}', -1)">-</button>
-            <input 
-              type="number" 
-              id="quantity-${productId}" 
-              value="1" 
-              min="1" 
-              class="input input-sm input-bordered join-item w-16 text-center" 
-              onchange="updatePrice('${productId}')"
-            />
-            <button class="btn btn-sm join-item" onclick="changeQuantity('${productId}', 1)">+</button>
-          </div>
-        </div>
-        
-        <div class="text-right">
-          <div class="text-xs sm:text-sm text-base-content/70">Prix total</div>
-          <div id="total-price-${productId}" class="text-xl sm:text-2xl font-bold text-primary">
-            ${data.prix.toFixed(2)}€
-          </div>
-        </div>
-      </div>
-
-      <!-- Bouton ajouter au panier -->
-      <button 
-        class="btn btn-primary btn-block"
-        onclick="addToCart('${productId}')"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
-        </svg>
-        Ajouter au panier
-      </button>
-    `;
-
-    // Scroll en haut du contenu après render
-    modalContent.scrollTop = 0;
   }
 
-  // Fonction pour changer la quantité
-  window.changeQuantity = function(productId, delta) {
-    const input = document.getElementById(`quantity-${productId}`);
-    if (!input) return;
-    
-    const currentValue = parseInt(input.value) || 1;
-    const newValue = Math.max(1, currentValue + delta);
-    input.value = newValue;
-    updatePrice(productId);
-  };
-
-  // Fonction pour mettre à jour le prix
-  window.updatePrice = function(productId) {
-    if (!productData) return;
-
-    const quantityInput = document.getElementById(`quantity-${productId}`);
-    const quantity = parseInt(quantityInput?.value || '1');
-
-    // Prix de base
-    let totalPrice = productData.prix;
-
-    // ✅ AJOUTER : Prix des choix obligatoires
-    const choiceInputs = document.querySelectorAll(`.choice-input:checked`);
-    choiceInputs.forEach(input => {
-      const priceModifier = parseFloat(input.dataset.priceModifier || '0');
-      totalPrice += priceModifier;
-    });
-
-    // Ajouter les suppléments sélectionnés
-    const supplementCheckboxes = document.querySelectorAll(`#supplements-list-${productId} input[type="checkbox"]:checked`);
-    supplementCheckboxes.forEach(checkbox => {
-      const price = parseFloat(checkbox.dataset.supplementPrice || '0');
-      totalPrice += price;
-    });
-
-    // Multiplier par la quantité
-    totalPrice *= quantity;
-
-    // Afficher le prix total
-    const priceDisplay = document.getElementById(`total-price-${productId}`);
-    if (priceDisplay) {
-      priceDisplay.textContent = `${totalPrice.toFixed(2)}€`;
-    }
-  };
-
-// Fonction pour ajouter au panier
-window.addToCart = function(productId) {
-  if (!productData) return;
-
-  // ✅ AJOUTER : Validation des choix obligatoires
-  const requiredChoices = productData.choices?.filter(c => c.required) || [];
-  const missingChoices = [];
-  
-  for (const choice of requiredChoices) {
-    const selected = document.querySelector(`input[name="choice-${productId}-${choice.id}"]:checked`);
-    if (!selected) {
-      missingChoices.push(choice.label);
-    }
-  }
-  
-  if (missingChoices.length > 0) {
-    alert('⚠️ Veuillez sélectionner : ' + missingChoices.join(', '));
-    return;
-  }
-
-  const quantityInput = document.getElementById(`quantity-${productId}`);
-  const quantity = parseInt(quantityInput?.value || '1');
-
-  // ✅ AJOUTER : Récupérer les choix sélectionnés
-  const selectedChoices = [];
-  const choiceInputs = document.querySelectorAll(`.choice-input:checked`);
-  choiceInputs.forEach(input => {
-    selectedChoices.push({
-      choice_id: input.dataset.choiceId,
-      option_id: input.dataset.optionId,
-      option_name: input.dataset.optionName,
-      price_modifier: parseFloat(input.dataset.priceModifier || '0')
-    });
-  });
-
-  // Récupérer les suppléments sélectionnés
-  const selectedSupps = [];
-  const supplementCheckboxes = document.querySelectorAll(`#supplements-list-${productId} input[type="checkbox"]:checked`);
-  supplementCheckboxes.forEach(checkbox => {
-    const suppId = checkbox.dataset.supplementId;
-    const supp = window.allSupplements?.find(s => s.id === suppId);
-    if (supp) {
-      selectedSupps.push(supp);
-    }
-  });
-  
-  // Récupérer les ingrédients retirés
-  const removedIngr = [];
-  const removableCheckboxes = document.querySelectorAll(`#removable-list-${productId} input[type="checkbox"]:checked`);
-  removableCheckboxes.forEach(checkbox => {
-    const ingredient = checkbox.dataset.removableIngredient;
-    if (ingredient) {
-      removedIngr.push(ingredient);
-    }
-  });
-
-  console.log('🛒 Ajout au panier:', {
-    product: productData.nom,
-    choices: selectedChoices,
-    supplements: selectedSupps,
-    removedIngredients: removedIngr,
-    quantity
-  });
-
-  // Calculer le prix unitaire
-  let unitPrice = productData.prix;
-  
-  // ✅ AJOUTER : Prix des choix
-  selectedChoices.forEach(choice => {
-    unitPrice += choice.price_modifier;
-  });
-  
-  selectedSupps.forEach(supp => {
-    unitPrice += supp.price;
-  });
-
-  // Créer l'objet article
-  const article = {
-    id: productData.id,
-    nom: productData.nom,
-    prix: unitPrice,
-    quantite: quantity,
-    choices_selected: selectedChoices, // ✅ AJOUTER
-    supplements: selectedSupps,
-    removed_ingredients: removedIngr,
-  };
-
-  // Récupérer le panier
-  const cart = JSON.parse(localStorage.getItem('cart') || '[]');
-
-  // ✅ MODIFIER : Vérifier avec les choix aussi
-  const existingIndex = cart.findIndex(item => 
-    item.id === article.id && 
-    JSON.stringify(item.choices_selected) === JSON.stringify(article.choices_selected) &&
-    JSON.stringify(item.supplements) === JSON.stringify(article.supplements) &&
-    JSON.stringify(item.removed_ingredients) === JSON.stringify(article.removed_ingredients)
-  );
-
-  if (existingIndex >= 0) {
-    cart[existingIndex].quantite += article.quantite;
-  } else {
-    cart.push(article);
-  }
-
-  localStorage.setItem('cart', JSON.stringify(cart));
-  window.dispatchEvent(new Event('cart-updated'));
-  console.log('✅ Produit ajouté au panier');
-
-  const modal = document.getElementById(`modal-${productId}`);
-  if (modal) {
-    modal.close();
-  }
-};
+  document.addEventListener('astro:page-load', initModals);
+  initModals();
 </script>

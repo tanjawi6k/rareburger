@@ -1,180 +1,226 @@
 ---
 // src/components/Navbar.astro
-// ============================================
-// 🧭 CMDOLA - Navigation Bar avec DaisyUI
-// ============================================
+// Barre de navigation — thème-aware, zéro fetch autonome
 
-import api from '../lib/api'; // ✅ Import par défaut
+import '../assets/app.css';
 
 interface Props {
+  /** Nom du restaurant — toujours passé depuis la page parente (pas de fetch ici) */
   restaurantName?: string;
-  cartItems?: number;
-  cartTotal?: number;
-  userAvatar?: string;
-  userName?: string;
+  /** URL du logo (résolu par la page parente) */
+  logoUrl?: string;
+  /** Afficher le bouton panier */
   showCart?: boolean;
-  showProfile?: boolean;
+  /** Page active pour highlight nav */
+  activePage?: 'menu' | 'cart' | 'status' | 'contact' | string;
 }
 
 const {
-  restaurantName,
-  cartItems = 0,
-  cartTotal = 0,
-  userAvatar = 'https://img.daisyui.com/images/stock/photo-1534528741775-53994a69daeb.webp',
-  userName = 'Utilisateur',
-  showCart = true,
-  showProfile = true,
+  restaurantName = 'CMDOLA',
+  logoUrl,
+  showCart   = true,
+  activePage = '',
 } = Astro.props;
-
-// Récupérer le nom du restaurant depuis l'API si non fourni
-let displayName = restaurantName;
-if (!displayName) {
-  try {
-    // ✅ Utilise déjà api.config.get() correctement (pas de restaurant_id)
-    const config = await api.config.get();
-    displayName = config.nom || 'CMDOLA';
-  } catch (error) {
-    console.warn('⚠️  Config restaurant non accessible, utilisation du nom par défaut');
-    displayName = 'CMDOLA';
-  }
-}
-
-// Formater le prix
-const formatPrice = (price: number) => {
-  return new Intl.NumberFormat('fr-BE', {
-    style: 'currency',
-    currency: 'EUR',
-  }).format(price);
-};
 ---
 
-<nav class="navbar bg-base-100 shadow-sm">
-  <!-- Logo / Nom du restaurant -->
-  <div class="flex-1">
-    <a href="/menu" class="btn btn-ghost text-xl">
-      {displayName}
+<nav class="navbar bg-base-100/95 backdrop-blur-sm shadow-sm px-2 sm:px-4" aria-label="Navigation principale">
+
+  <!-- Logo / Nom -->
+  <div class="flex-1 min-w-0">
+    <a
+      href="/menu"
+      class="btn btn-ghost gap-2 text-base sm:text-lg font-bold truncate max-w-[160px] sm:max-w-none"
+      aria-current={activePage === 'menu' ? 'page' : undefined}
+    >
+      {logoUrl && (
+        <img
+          src={logoUrl}
+          alt=""
+          class="w-7 h-7 rounded-lg object-contain shrink-0"
+          width="28"
+          height="28"
+          aria-hidden="true"
+        />
+      )}
+      <span class="truncate">{restaurantName}</span>
     </a>
   </div>
 
-  <!-- Actions à droite -->
-  <div class="flex-none gap-2">
-    
-    <!-- 🛒 Panier -->
+  <!-- Actions droite -->
+  <div class="flex-none flex items-center gap-1">
+
+    <!-- Suivi commande -->
+    <a
+      href="/status"
+      class="btn btn-ghost btn-sm gap-1.5 hidden sm:flex"
+      aria-label="Suivre ma commande"
+      aria-current={activePage === 'status' ? 'page' : undefined}
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+      </svg>
+      <span>Ma commande</span>
+    </a>
+
+    <!-- Panier -->
     {showCart && (
-      <a href="/cart" class="btn btn-ghost btn-circle">
+      <a
+        href="/cart"
+        class="btn btn-ghost btn-circle"
+        aria-label="Panier"
+        id="cart-btn"
+        aria-current={activePage === 'cart' ? 'page' : undefined}
+      >
         <div class="indicator">
-          <svg 
-            xmlns="http://www.w3.org/2000/svg" 
-            class="h-5 w-5" 
-            fill="none" 
-            viewBox="0 0 24 24" 
-            stroke="currentColor"
-          >
-            <path 
-              stroke-linecap="round" 
-              stroke-linejoin="round" 
-              stroke-width="2" 
-              d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" 
-            />
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/>
           </svg>
-          <span id="cart-badge" class="badge badge-sm indicator-item badge-primary" style="display: none;">
-            0
-          </span>
+          <!-- Badge : géré exclusivement par JS, rendu initial caché via classe -->
+          <span
+            id="cart-badge"
+            class="badge badge-xs badge-primary indicator-item cart-badge-hidden"
+            aria-live="polite"
+            aria-label="articles dans le panier"
+          >0</span>
         </div>
       </a>
     )}
 
-    <!-- 👤 Profil Utilisateur -->
-    {showProfile && (
-      <div class="dropdown dropdown-end">
-        <div tabindex="0" role="button" class="btn btn-ghost btn-circle avatar">
-          <div class="w-10 rounded-full">
-            <img
-              alt={userName}
-              src={userAvatar}
-            />
-          </div>
-        </div>
-        
-        <!-- Dropdown Menu -->
-        <ul
-          tabindex="0"
-          class="menu menu-sm dropdown-content bg-base-100 rounded-box z-[1] mt-3 w-52 p-2 shadow-lg">
-          <li><a href="/status">Suivre commande</a></li>
-          <li><a href="/contact">Contact</a></li>
-        </ul>
-      </div>
-    )}
+    <!-- Menu mobile (suivi + contact) -->
+    <div class="dropdown dropdown-end sm:hidden">
+      <button
+        tabindex="0"
+        class="btn btn-ghost btn-circle"
+        aria-label="Menu navigation"
+        aria-haspopup="true"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+        </svg>
+      </button>
+      <ul
+        tabindex="0"
+        class="menu menu-sm dropdown-content bg-base-100 rounded-box shadow-lg z-50 mt-3 w-44 p-2 border border-base-200"
+        role="menu"
+      >
+        <li role="none">
+          <a href="/status" role="menuitem" class="gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+            </svg>
+            Ma commande
+          </a>
+        </li>
+        <li role="none">
+          <a href="/contact" role="menuitem" class="gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+            </svg>
+            Contact
+          </a>
+        </li>
+      </ul>
+    </div>
+
   </div>
 </nav>
 
 <style>
-  /* Animation pour le badge du panier */
-  .indicator-item {
-    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  /* ── Badge caché par défaut (CSS, pas inline) ── */
+  .cart-badge-hidden {
+    display: none;
   }
 
-  @keyframes pulse {
-    0%, 100% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.8;
-      transform: scale(1.05);
-    }
+  /* ── Badge visible avec animation ─────────────── */
+  .cart-badge-visible {
+    display: inline-flex;
+    animation: badge-pop 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
   }
 
-  /* Amélioration du dropdown */
+  @keyframes badge-pop {
+    from { transform: scale(0.5); opacity: 0; }
+    to   { transform: scale(1);   opacity: 1; }
+  }
+
+  /* ── Dropdown animation ────────────────────── */
   .dropdown-content {
-    animation: slideDown 0.2s ease-out;
+    animation: dropdown-in 0.15s ease-out;
+    transform-origin: top right;
   }
 
-  @keyframes slideDown {
-    from {
-      opacity: 0;
-      transform: translateY(-10px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
+  @keyframes dropdown-in {
+    from { opacity: 0; transform: scale(0.95) translateY(-4px); }
+    to   { opacity: 1; transform: scale(1)    translateY(0); }
   }
 
-  /* Hover effect sur le logo */
-  .navbar .btn-ghost:hover {
-    background-color: transparent;
-    transform: scale(1.05);
-    transition: transform 0.2s ease;
+  /* ── Navbar blur sur scroll ─────────────────── */
+  .navbar {
+    transition: box-shadow 0.2s ease;
+  }
+
+  /* ── Touch targets ──────────────────────────── */
+  @media (pointer: coarse) {
+    .btn-circle { min-width: 44px; min-height: 44px; }
   }
 </style>
 
 <script>
-  // 🎯 Mise à jour du badge panier
-  function updateCartBadge() {
-    const cart = JSON.parse(localStorage.getItem('cart') || '[]');
-    const totalItems = cart.reduce((sum: number, item: any) => sum + item.quantite, 0);
-    
+  // ════════════════════════════════════════════
+  //  Navbar — badge panier
+  //  Source unique : localStorage 'cart'
+  //  Événements : cart-updated (même onglet)
+  //               storage      (autres onglets)
+  // ════════════════════════════════════════════
+
+  function updateBadge() {
     const badge = document.getElementById('cart-badge');
-    if (badge) {
-      badge.textContent = totalItems.toString();
-      badge.style.display = totalItems > 0 ? 'inline-flex' : 'none';
+    if (!badge) return;
+
+    let total = 0;
+    try {
+      const cart = JSON.parse(localStorage.getItem('cart') || '[]');
+      total = cart.reduce((s: number, i: any) => s + (i.quantite || 0), 0);
+    } catch { /* localStorage indisponible */ }
+
+    badge.textContent = String(total);
+    badge.classList.toggle('cart-badge-hidden', total === 0);
+    badge.classList.toggle('cart-badge-visible', total > 0);
+
+    // Accessibilité : mettre à jour l'aria-label du bouton
+    const btn = document.getElementById('cart-btn');
+    if (btn) {
+      btn.setAttribute(
+        'aria-label',
+        total > 0 ? `Panier — ${total} article${total > 1 ? 's' : ''}` : 'Panier vide'
+      );
     }
   }
 
-  // Mettre à jour au chargement
-  if (typeof window !== 'undefined') {
-    // Au chargement initial
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', updateCartBadge);
-    } else {
-      updateCartBadge();
-    }
-    
-    // Quand le panier change
-    window.addEventListener('cart-updated', updateCartBadge);
-    window.addEventListener('storage', updateCartBadge);
-    
-    // Support Astro View Transitions
-    document.addEventListener('astro:page-load', updateCartBadge);
+  // ── Navbar shadow au scroll ──────────────────
+  function updateNavbarShadow() {
+    const nav = document.querySelector('nav.navbar');
+    if (!nav) return;
+    nav.classList.toggle('shadow-md', window.scrollY > 8);
+    nav.classList.toggle('shadow-sm', window.scrollY <= 8);
   }
+
+  // ── Init ─────────────────────────────────────
+  function init() {
+    updateBadge();
+    updateNavbarShadow();
+
+    // cart-updated : même onglet
+    window.addEventListener('cart-updated', updateBadge);
+
+    // storage : autres onglets (sync multi-tab)
+    window.addEventListener('storage', (e: StorageEvent) => {
+      if (e.key === 'cart') updateBadge();
+    });
+
+    window.addEventListener('scroll', updateNavbarShadow, { passive: true });
+  }
+
+  // Compatible View Transitions
+  document.addEventListener('astro:page-load', init);
+  init();
 </script>

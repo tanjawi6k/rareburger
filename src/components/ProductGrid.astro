@@ -1,303 +1,208 @@
 ---
 // src/components/ProductGrid.astro
-// ============================================
-// 📋 CMDOLA - Grille de Produits Responsive
-// ============================================
-
-import api from '../lib/api'; // ✅ Import par défaut
 import ProductCard from './ProductCard.astro';
-import "../assets/app.css";
+import '../assets/app.css';
+
+interface Produit {
+  id: string;
+  nom: string;
+  description?: string;
+  prix: number;
+  category?: string;
+  images?: string[];
+  disponible: boolean;
+  supplements?: string[];
+  removable_ingredients?: string[];
+  allergenes?: string[];
+  choices?: any[];
+}
 
 interface Props {
+  products: Produit[];
   category?: string;
   limit?: number;
+  isOpen?: boolean;
+  apiBaseUrl?: string;
+  hasError?: boolean;
+  telephone?: string;
 }
 
 const {
-  category = 'all',
+  products: allProducts = [],
+  category   = 'all',
   limit,
+  isOpen     = true,
+  apiBaseUrl = 'http://127.0.0.1:5000/api',
+  hasError   = false,
+  telephone  = '',
 } = Astro.props;
 
-// Récupérer les produits depuis l'API
-let products: any[] = [];
-let apiError = false;
-
-// Données de démo (fallback)
-const demoProducts = [
-  { id: 'demo-1', nom: 'Pizza Margherita', description: 'Sauce tomate, mozzarella, basilic frais', prix: 12.50, category: 'pizzas', disponible: true, popular: true },
-  { id: 'demo-2', nom: 'Burger Classic', description: 'Steak haché, salade, tomate, oignons', prix: 10.90, category: 'burgers', disponible: true, popular: false },
-  { id: 'demo-3', nom: 'Salade César', description: 'Poulet grillé, parmesan, croûtons', prix: 9.50, category: 'entrees', disponible: true, popular: true },
-  { id: 'demo-4', nom: 'Tiramisu', description: 'Mascarpone, café, cacao', prix: 6.50, category: 'desserts', disponible: true, popular: false },
-  { id: 'demo-5', nom: 'Coca Cola', description: '33cl', prix: 2.50, category: 'boissons', disponible: true, popular: false },
-  { id: 'demo-6', nom: 'Pizza 4 Fromages', description: 'Mozzarella, gorgonzola, chèvre, parmesan', prix: 14.50, category: 'pizzas', disponible: true, popular: true },
-];
-
-try {
-  // ✅ Utilise déjà api.menu.get() correctement
-  const menu = await api.menu.get();
-  products = menu.produits || [];
-  
-  // Si pas de produits, utiliser des données de démo
-  if (products.length === 0) {
-    console.warn('⚠️  Aucun produit depuis l\'API, utilisation de données de démo');
-    apiError = true;
-    products = demoProducts;
-  }
-  
-  // Filtrer par catégorie si nécessaire
-  if (category && category !== 'all') {
-    products = products.filter(p => 
-      p.category?.toLowerCase() === category.toLowerCase()
-    );
-  }
-  
-  // Limiter le nombre de produits si demandé
-  if (limit) {
-    products = products.slice(0, limit);
-  }
-  
-  // Trier : produits disponibles en premier, puis populaires
-  products.sort((a, b) => {
-    if (a.disponible !== b.disponible) {
-      return b.disponible ? 1 : -1;
-    }
-    if (a.popular !== b.popular) {
-      return b.popular ? 1 : -1;
-    }
-    return 0;
-  });
-  
-} catch (error) {
-  console.error('❌ Erreur chargement produits:', error);
-  apiError = true;
-  products = demoProducts;
+function resolveImageUrl(img: string, base: string): string {
+  if (!img) return '';
+  if (/^https?:\/\//.test(img) || img.startsWith('//')) return img;
+  const baseRoot = base.replace(/\/api\/?$/, '').replace(/\/$/, '');
+  const path     = img.startsWith('/') ? img : `/api/images/${img}`;
+  return `${baseRoot}${path}`;
 }
+
+let products = [...allProducts];
+
+if (category !== 'all') {
+  products = products.filter(p =>
+    p.category?.toLowerCase() === category.toLowerCase()
+  );
+}
+
+if (limit) products = products.slice(0, limit);
+
+products.sort((a, b) => {
+  if (a.disponible === b.disponible) return 0;
+  return a.disponible ? -1 : 1;
+});
 ---
 
-<div class="container mx-auto px-4 py-6">
-  
-  <!-- Alerte si mode démo -->
-  {apiError && (
-    <div class="alert alert-warning mb-4">
-      <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 shrink-0 stroke-current" fill="none" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+<section aria-label="Produits du menu">
+
+  {hasError && (
+    <div class="alert alert-warning mb-4 rounded-2xl" role="alert">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
       </svg>
-      <span>
-        <strong>Serveur en panne... :</strong> Nos serveurs recontrent un petit soucis. Commandez directement par téléphone au <code class="bg-base-200 px-2 py-1 rounded">0470 18 42 42</code>
-      </span>
-    </div>
-  )}
-  
-  <!-- En-tête optionnel -->
-  {category !== 'all' && (
-    <div class="mb-6">
-      <h2 class="text-2xl font-bold">
-        {category.charAt(0).toUpperCase() + category.slice(1)}
-      </h2>
-      <div class="divider"></div>
+      <div class="min-w-0">
+        <p class="font-bold text-sm">Commande en ligne temporairement indisponible</p>
+        {telephone && (
+          <p class="text-xs opacity-80">
+            Appelez-nous au&nbsp;
+            <a href={`tel:${telephone.replace(/\s/g, '')}`} class="link link-hover font-semibold">
+              {telephone}
+            </a>
+          </p>
+        )}
+      </div>
     </div>
   )}
 
-  {/* Grille responsive */}
   {products.length > 0 ? (
-    <div 
-      class="
-        grid gap-4
-        grid-cols-1
-        sm:grid-cols-2
-        lg:grid-cols-3
-        xl:grid-cols-4
-        2xl:grid-cols-5
-      "
+    <div
       id="product-grid"
+      class="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5"
+      data-category={category}
     >
-      {products.map((product) => {
-        // ✅ Utiliser api.images.getUrl() pour construire les URLs
-        const images = (product.images || []).map((img: string) => {
-          // Si c'est déjà une URL complète, la garder telle quelle
-          if (img.startsWith('http')) return img;
-          // Sinon, utiliser le helper api.ts
-          return api.images.getUrl(img);
-        });
-        
+      {products.map((product, idx) => {
+        const resolvedImages = (product.images || []).map(img =>
+          resolveImageUrl(img, apiBaseUrl)
+        );
         return (
-          <ProductCard
-            id={product.id}
-            nom={product.nom || product.name}
-            description={product.description}
-            prix={product.prix || product.price}
-            category={product.category}
-            image={images[0]}
-            images={images}
-            disponible={product.disponible ?? true}
-            popular={product.popular ?? false}
-            supplements={product.supplements || []}
-            removable_ingredients={product.removable_ingredients || []}
-            allergenes={product.allergenes || []}
-            choices={product.choices || []}
-          />
+          <div
+            class="product-grid-item"
+            data-product-id={product.id}
+            data-category={product.category || ''}
+            data-available={String(product.disponible)}
+            style={`animation-delay: ${Math.min(idx * 40, 400)}ms`}
+          >
+            <ProductCard
+              id={product.id}
+              nom={product.nom}
+              description={product.description}
+              prix={product.prix}
+              category={product.category}
+              image={resolvedImages[0]}
+              images={resolvedImages}
+              disponible={product.disponible}
+              isOpen={isOpen}
+              supplements={product.supplements || []}
+              removable_ingredients={product.removable_ingredients || []}
+              allergenes={product.allergenes || []}
+              choices={product.choices || []}
+            />
+          </div>
         );
       })}
     </div>
   ) : (
-    /* Message si aucun produit */
-    <div class="flex flex-col items-center justify-center py-12">
-      <div class="text-6xl mb-4">🍽️</div>
-      <h3 class="text-xl font-bold mb-2">Aucun produit disponible</h3>
-      <p class="text-base-content/60">
-        {category !== 'all' 
-          ? `Aucun produit dans la catégorie "${category}"` 
+    <div class="empty-state" id="empty-initial" role="status">
+      <span class="text-5xl" aria-hidden="true">🍽️</span>
+      <p class="font-bold text-lg mt-3">Aucun produit disponible</p>
+      <p class="text-base-content/60 text-sm mt-1">
+        {category !== 'all'
+          ? 'Aucun produit dans cette catégorie'
           : 'Le menu est en cours de préparation'}
       </p>
     </div>
   )}
-</div>
+
+  <div class="empty-state hidden" id="empty-filtered" role="status" aria-live="polite">
+    <span class="text-5xl" aria-hidden="true">🔍</span>
+    <p class="font-bold text-lg mt-3">Aucun produit dans cette catégorie</p>
+    <p class="text-base-content/60 text-sm mt-1">Essayez une autre catégorie</p>
+  </div>
+
+</section>
 
 <style>
-  /* Smooth animation pour le grid */
-  #product-grid {
-    animation: fadeIn 0.3s ease-in;
+  .product-grid-item {
+    opacity: 0;
+    transform: translateY(12px);
+    animation: grid-item-in 0.3s ease-out forwards;
   }
-
-  @keyframes fadeIn {
-    from {
-      opacity: 0;
-      transform: translateY(10px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
+  @keyframes grid-item-in {
+    to { opacity: 1; transform: translateY(0); }
   }
-
-  /* Gap responsive */
-  @media (max-width: 640px) {
-    #product-grid {
-      gap: 1rem;
-    }
+  .product-grid-item[data-hidden] { display: none; }
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 3rem 1rem;
+    text-align: center;
   }
-
-  @media (min-width: 1024px) {
-    #product-grid {
-      gap: 1.5rem;
-    }
-  }
+  .empty-state.hidden { display: none; }
+  @media (max-width: 640px)  { #product-grid { gap: 0.75rem; } }
+  @media (min-width: 1024px) { #product-grid { gap: 1.5rem; } }
 </style>
 
 <script>
-  // 🎯 Filtrage dynamique par catégorie
-  function handleCategoryChange(e: CustomEvent) {
-    console.log('🎯 Événement category-changed reçu:', e.detail);
-    
-    const categoryId = e.detail.categoryId;
-    const productGrid = document.getElementById('product-grid');
-    
-    if (!productGrid) {
-      console.warn('⚠️ ProductGrid non trouvé');
-      return;
-    }
-    
-    const allProducts = productGrid.querySelectorAll('[data-product-id]');
-    
-    console.log(`📦 ${allProducts.length} produits trouvés`);
-    
-    allProducts.forEach((product) => {
-      const productElement = product as HTMLElement;
-      const productCategory = productElement.dataset.category;
-      
-      if (categoryId === 'all') {
-        // Afficher tous les produits
-        productElement.style.display = '';
-        setTimeout(() => {
-          productElement.style.opacity = '1';
-          productElement.style.transform = 'scale(1)';
-        }, 50);
-      } else if (productCategory?.toLowerCase() === categoryId.toLowerCase()) {
-        // Afficher les produits de cette catégorie
-        productElement.style.display = '';
-        setTimeout(() => {
-          productElement.style.opacity = '1';
-          productElement.style.transform = 'scale(1)';
-        }, 50);
-      } else {
-        // Masquer les autres
-        productElement.style.opacity = '0';
-        productElement.style.transform = 'scale(0.95)';
-        setTimeout(() => {
-          productElement.style.display = 'none';
-        }, 200);
-      }
-    });
-    
-    // Vérifier s'il reste des produits visibles
-    setTimeout(() => {
-      const visibleProducts = Array.from(allProducts).filter(
-        (p) => (p as HTMLElement).style.display !== 'none'
-      );
-      
-      console.log(`👁️ ${visibleProducts.length} produits visibles`);
-      
-      if (visibleProducts.length === 0) {
-        showEmptyMessage(categoryId);
-      } else {
-        hideEmptyMessage();
-      }
-    }, 300);
-  }
-
-  // Écouter l'événement
-  document.addEventListener('category-changed', handleCategoryChange as EventListener);
-  
-  // Support Astro View Transitions
-  document.addEventListener('astro:page-load', () => {
-    document.addEventListener('category-changed', handleCategoryChange as EventListener);
-  });
-
-  // Afficher un message si aucun produit
-  function showEmptyMessage(category: string) {
-    const grid = document.getElementById('product-grid');
+  function filterProducts(categoryId: string) {
+    const grid   = document.getElementById('product-grid');
+    const emptyF = document.getElementById('empty-filtered');
+    const emptyI = document.getElementById('empty-initial');
     if (!grid) return;
-    
-    let emptyMsg = document.getElementById('empty-message');
-    if (!emptyMsg) {
-      emptyMsg = document.createElement('div');
-      emptyMsg.id = 'empty-message';
-      emptyMsg.className = 'col-span-full flex flex-col items-center justify-center py-12';
-      emptyMsg.innerHTML = `
-        <div class="text-6xl mb-4">🔍</div>
-        <h3 class="text-xl font-bold mb-2">Aucun produit trouvé</h3>
-        <p class="text-base-content/60">Aucun produit dans la catégorie "${category}"</p>
-      `;
-      grid.appendChild(emptyMsg);
-    }
-    emptyMsg.style.display = 'flex';
-  }
 
-  function hideEmptyMessage() {
-    const emptyMsg = document.getElementById('empty-message');
-    if (emptyMsg) {
-      emptyMsg.style.display = 'none';
-    }
-  }
+    const items = grid.querySelectorAll<HTMLElement>('.product-grid-item');
+    let visible = 0;
 
-  // Animation au scroll (optionnel)
-  if (typeof window !== 'undefined' && 'IntersectionObserver' in window) {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            entry.target.classList.add('animate-fadeIn');
-            observer.unobserve(entry.target);
-          }
-        });
-      },
-      { threshold: 0.1 }
-    );
+    items.forEach(item => {
+      const match =
+        categoryId === 'all' ||
+        item.dataset.category?.toLowerCase() === categoryId.toLowerCase();
 
-    document.addEventListener('astro:page-load', () => {
-      document.querySelectorAll('.card').forEach((card) => {
-        observer.observe(card);
-      });
+      if (match) {
+        item.removeAttribute('data-hidden');
+        visible++;
+      } else {
+        // Délai 100ms avant masquage pour éviter NS_BINDING_ABORTED sur les images
+        setTimeout(() => item.setAttribute('data-hidden', ''), 100);
+      }
     });
+
+    const noProducts = items.length === 0;
+    emptyI?.classList.toggle('hidden', !noProducts);
+    emptyF?.classList.toggle('hidden', noProducts || visible > 0);
   }
+
+  let controller: AbortController | null = null;
+
+  function setup() {
+    controller?.abort();
+    controller = new AbortController();
+    document.addEventListener(
+      'category-changed',
+      (e: Event) => filterProducts((e as CustomEvent).detail.categoryId),
+      { signal: controller.signal }
+    );
+  }
+
+  document.addEventListener('astro:page-load', setup);
+  setup();
 </script>

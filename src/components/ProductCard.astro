@@ -1,11 +1,13 @@
 ---
 // src/components/ProductCard.astro
-// ============================================
-// 🍕 CMDOLA - Carte Produit avec DaisyUI
-// ============================================
+import '../assets/app.css';
 
-import ProductModal from './ProductModal.astro';
-import "../assets/app.css";
+interface Choice {
+  id: string;
+  label: string;
+  required: boolean;
+  options: { id: string; name: string; price_modifier: number }[];
+}
 
 interface Props {
   id: string;
@@ -16,158 +18,187 @@ interface Props {
   image?: string;
   images?: string[];
   disponible?: boolean;
-  popular?: boolean;
+  isOpen?: boolean;
   supplements?: string[];
   allergenes?: string[];
   removable_ingredients?: string[];
-  choices?: any[];
+  choices?: Choice[];
 }
 
 const {
   id,
   nom,
-  description = '',
+  description           = '',
   prix,
-  category = '',
+  category              = '',
   image,
-  images = [],
-  disponible = true,
-  popular = false,
-  supplements = [],
-  allergenes = [],
+  images                = [],
+  disponible            = true,
+  isOpen                = true,
+  supplements           = [],
+  allergenes            = [],
   removable_ingredients = [],
-  choices = [],
+  choices               = [],
 } = Astro.props;
 
-// Image par défaut si non fournie
-const defaultImage = 'https://img.daisyui.com/images/stock/photo-1606107557195-0e29a4b5b4aa.webp';
-const productImage = image || defaultImage;
+const allImages = images.length > 0 ? images : (image ? [image] : []);
+const mainImage = allImages[0] || null;
 
-// Toutes les images (avec fallback)
-const allImages = images.length > 0 ? images : (image ? [image] : [defaultImage]);
+const ctaDisabled = !disponible || !isOpen;
+const ctaLabel    = !disponible ? 'Victime de son succès' : !isOpen ? 'Restaurant fermé' : 'Commander';
 
-// Formatter le prix
-const formatPrice = (price: number) => {
-  return new Intl.NumberFormat('fr-BE', {
-    style: 'currency',
-    currency: 'EUR',
-  }).format(price);
-};
+const formatPrice = (p: number) =>
+  new Intl.NumberFormat('fr-BE', { style: 'currency', currency: 'EUR' }).format(p);
+
+// Données produit — sérialisées dans un <script type="application/json">
+// pour éviter tout problème d'encodage dans les attributs HTML
+const productData = JSON.stringify({
+  id, nom, description, prix, category,
+  images: allImages, disponible,
+  supplements, removable_ingredients, allergenes, choices,
+});
 ---
 
-<div 
-  class={`
-    card bg-base-100 shadow-sm hover:shadow-md transition-shadow duration-200
-    ${!disponible ? 'opacity-60' : ''}
-  `}
+<article
+  class="card bg-base-100 shadow-sm card-product"
   data-product-id={id}
-  data-product-name={nom}
-  data-product-description={description}
-  data-product-price={prix}
-  data-product-images={JSON.stringify(allImages)}
-  data-product-supplements={JSON.stringify(supplements)}
-  data-product-removableingredients={JSON.stringify(removable_ingredients)}
-  data-product-allergenes={JSON.stringify(allergenes)}
   data-category={category}
-  data-product-choices={JSON.stringify(choices || [])}
-
+  data-available={String(disponible)}
+  aria-label={nom}
 >
-  <!-- Image avec badges -->
-  <figure class="relative">
-    <img
-      src={productImage}
-      alt={nom}
-      class="w-full h-48 object-cover"
-      loading="lazy"
-    />
-    
-    <!-- Badge Populaire -->
-    {popular && (
-      <div class="badge badge-secondary absolute top-2 left-2">
-        ⭐ Populaire
+  <!-- Données produit en JSON pur — pas d'attribut HTML = zéro encodage -->
+  <script type="application/json" class="product-data" set:html={productData} />
+
+  <!-- Image -->
+  <figure class="relative overflow-hidden rounded-t-2xl bg-base-200 aspect-[4/3]">
+    {mainImage ? (
+      <img
+        src={mainImage}
+        alt={nom}
+        class="w-full h-full object-cover transition-transform duration-300 card-img"
+        loading="lazy"
+        decoding="async"
+      />
+    ) : (
+      <div
+        class="w-full h-full flex items-center justify-center text-5xl text-base-content/20"
+        aria-hidden="true"
+      >
+        🍽️
       </div>
     )}
-    
-    <!-- Badge Indisponible -->
+
     {!disponible && (
-      <div class="badge badge-error absolute top-2 right-2">
-        Victime de son succès
+      <div
+        class="absolute inset-0 bg-base-300/60 flex items-center justify-center"
+        aria-hidden="true"
+      >
+        <span class="badge badge-error badge-lg font-semibold">Épuisé</span>
       </div>
     )}
   </figure>
 
-  <!-- Corps de la carte -->
-  <div class="card-body">
-    
-    <!-- Titre et Prix -->
+  <!-- Corps -->
+  <div class="card-body p-4 gap-2">
+
     <div class="flex items-start justify-between gap-2">
-      <h2 class="card-title text-base flex-1">
-        {nom}
-      </h2>
-      <span class="text-lg font-bold text-primary whitespace-nowrap">
+      <h2 class="card-title text-base leading-snug flex-1 line-clamp-2">{nom}</h2>
+      <span class="text-base font-bold text-primary shrink-0 tabular-nums">
         {formatPrice(prix)}
       </span>
     </div>
 
-    <!-- Description -->
     {description && (
-      <p class="text-sm text-base-content/70 line-clamp-2">
+      <p class="text-sm text-base-content/60 line-clamp-2 leading-relaxed">
         {description}
       </p>
     )}
 
-    <!-- Catégorie (optionnel) -->
-    {category && (
-      <div class="badge badge-ghost badge-sm">
-        {category}
+    {allergenes.length > 0 && (
+      <div class="flex flex-wrap gap-1">
+        {allergenes.map(a => (
+          <span class="badge badge-warning badge-xs">⚠️ {a}</span>
+        ))}
       </div>
     )}
 
-    <!-- Actions -->
-    <div class="card-actions justify-end mt-2">
-      {disponible ? (
-        <button 
-          class="btn btn-primary btn-sm btn-block"
-          onclick={`openProductModal('${id}')`}
+    <div class="card-actions mt-auto pt-1">
+      {ctaDisabled ? (
+        <button
+          class="btn btn-sm btn-block btn-disabled"
+          disabled
+          aria-disabled="true"
         >
-          Voir détails & Ajouter
+          {ctaLabel}
         </button>
       ) : (
-        <button class="btn btn-disabled btn-sm btn-block" disabled>
-          Victime de son succès
+        <button
+          class="btn btn-sm btn-block btn-primary btn-open-modal"
+          aria-label={`Voir les détails de ${nom}`}
+        >
+          {ctaLabel}
         </button>
       )}
     </div>
-  </div>
-</div>
 
-<!-- Modal pour ce produit -->
-<ProductModal id={id} />
+  </div>
+</article>
 
 <style>
-  /* Truncate text sur 2 lignes */
+  .card-product {
+    transition: box-shadow 0.2s ease, transform 0.2s ease;
+    border-radius: 1rem;
+  }
+  .card-product:hover {
+    box-shadow: 0 8px 24px oklch(var(--bc) / 0.12);
+    transform: translateY(-2px);
+  }
+  .card-product:hover .card-img {
+    transform: scale(1.04);
+  }
+  .card-product:has([data-available="false"]) .card-body {
+    opacity: 0.7;
+  }
   .line-clamp-2 {
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
-
-  /* Animation au hover */
-  .card:hover {
-    transform: translateY(-2px);
-    transition: transform 0.2s ease;
-  }
-
-  /* Image cover parfait */
-  figure img {
-    aspect-ratio: 4/3;
-  }
-
-  /* Responsive image height */
-  @media (max-width: 640px) {
-    figure img {
-      height: 200px;
-    }
+  @media (hover: none) {
+    .card-product:hover { transform: none; box-shadow: none; }
+    .card-product:hover .card-img { transform: none; }
+    .card-product:active { transform: scale(0.98); transition-duration: 0.1s; }
   }
 </style>
+
+<script>
+  function bindCards() {
+    document.querySelectorAll<HTMLElement>('.btn-open-modal').forEach(btn => {
+      if (btn.dataset.bound) return;
+      btn.dataset.bound = '1';
+
+      btn.addEventListener('click', () => {
+        // Lire le JSON depuis le <script type="application/json"> voisin
+        const card       = btn.closest('article');
+        const scriptTag  = card?.querySelector<HTMLScriptElement>('script.product-data');
+        if (!scriptTag) return;
+
+        let product: any;
+        try {
+          product = JSON.parse(scriptTag.textContent || '{}');
+        } catch (e) {
+          console.error('ProductCard: JSON invalide', e, scriptTag.textContent?.slice(0, 100));
+          return;
+        }
+
+        document.dispatchEvent(
+          new CustomEvent('open-product-modal', { detail: product, bubbles: true })
+        );
+      });
+    });
+  }
+
+  document.addEventListener('astro:page-load', bindCards);
+  bindCards();
+</script>

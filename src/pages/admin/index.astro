@@ -1,72 +1,62 @@
 ---
 // src/pages/admin/index.astro
 import AdminLayout from '../../layouts/AdminLayout.astro';
-
-// IMPORTANT : Forcer SSR pour l'authentification
 export const prerender = false;
 
-// Vérification auth côté serveur
 const user = Astro.locals.user;
-if (!user || !user.roles.includes('admin')) {
-  return Astro.redirect('/login');
-}
+if (!user?.roles.includes('admin')) return Astro.redirect('/login');
+
+const apiBaseUrl: string = import.meta.env.PUBLIC_API_URL ?? 'http://127.0.0.1:5000/api';
 ---
 
 <AdminLayout title="Dashboard">
-  
+
   <!-- En-tête -->
   <div class="mb-6">
     <h1 class="text-3xl font-bold">Dashboard</h1>
-    <p class="text-base-content/60">Vue d'ensemble de votre activité</p>
+    <p class="text-base-content/60">Bonjour {user.name} — vue d'ensemble de votre activité</p>
   </div>
 
-  <!-- Loader initial -->
+  <!-- Loader -->
   <div id="loader" class="flex justify-center items-center py-20">
-    <span class="loading loading-spinner loading-lg"></span>
+    <span class="loading loading-spinner loading-lg text-primary"></span>
   </div>
 
-  <!-- Contenu (caché au départ) -->
+  <!-- Contenu -->
   <div id="dashboardContent" class="hidden">
 
-    <!-- Stats Cards -->
+    <!-- Stats -->
     <div class="stats stats-vertical lg:stats-horizontal shadow w-full mb-6">
-      
       <div class="stat">
         <div class="stat-title">Commandes aujourd'hui</div>
-        <div class="stat-value text-primary" id="todayOrders">0</div>
+        <div class="stat-value text-primary" id="todayOrders">—</div>
         <div class="stat-desc">Commandes reçues ce jour</div>
       </div>
-      
       <div class="stat">
         <div class="stat-title">En attente</div>
-        <div class="stat-value text-warning" id="pendingOrders">0</div>
+        <div class="stat-value text-warning" id="pendingOrders">—</div>
         <div class="stat-desc">À préparer ou en cours</div>
       </div>
-      
       <div class="stat">
         <div class="stat-title">CA aujourd'hui</div>
-        <div class="stat-value text-success" id="todayRevenue">0 €</div>
+        <div class="stat-value text-success" id="todayRevenue">—</div>
         <div class="stat-desc">Chiffre d'affaires du jour</div>
       </div>
-      
       <div class="stat">
         <div class="stat-title">Panier moyen</div>
-        <div class="stat-value" id="averageOrder">0 €</div>
+        <div class="stat-value" id="averageOrder">—</div>
         <div class="stat-desc">Moyenne par commande</div>
       </div>
-      
     </div>
 
-    <!-- Grid responsive -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      
+
       <!-- Commandes récentes -->
       <div class="card bg-base-100 shadow-lg">
         <div class="card-body">
           <h2 class="card-title">Commandes récentes</h2>
-          
           <div class="overflow-x-auto">
-            <table class="table table-zebra">
+            <table class="table table-zebra table-sm">
               <thead>
                 <tr>
                   <th>Numéro</th>
@@ -76,19 +66,14 @@ if (!user || !user.roles.includes('admin')) {
                 </tr>
               </thead>
               <tbody id="recentOrdersTable">
-                <tr>
-                  <td colspan="4" class="text-center">
-                    <span class="loading loading-spinner loading-sm"></span>
-                  </td>
-                </tr>
+                <tr><td colspan="4" class="text-center py-4">
+                  <span class="loading loading-spinner loading-sm"></span>
+                </td></tr>
               </tbody>
             </table>
           </div>
-
-          <div class="card-actions justify-end mt-4">
-            <a href="/admin/commandes" class="btn btn-primary btn-sm">
-              Voir toutes les commandes
-            </a>
+          <div class="card-actions justify-end mt-2">
+            <a href="/admin/commandes" class="btn btn-primary btn-sm">Voir toutes</a>
           </div>
         </div>
       </div>
@@ -97,17 +82,13 @@ if (!user || !user.roles.includes('admin')) {
       <div class="card bg-base-100 shadow-lg">
         <div class="card-body">
           <h2 class="card-title">Top produits</h2>
-          
           <div id="topProductsList" class="space-y-3">
-            <div class="text-center py-8">
+            <div class="flex justify-center py-8">
               <span class="loading loading-spinner loading-md"></span>
             </div>
           </div>
-
-          <div class="card-actions justify-end mt-4">
-            <a href="/admin/menu" class="btn btn-primary btn-sm">
-              Gérer le menu
-            </a>
+          <div class="card-actions justify-end mt-2">
+            <a href="/admin/menu" class="btn btn-primary btn-sm">Gérer le menu</a>
           </div>
         </div>
       </div>
@@ -118,187 +99,208 @@ if (!user || !user.roles.includes('admin')) {
     <div class="mt-6">
       <h2 class="text-xl font-bold mb-4">Actions rapides</h2>
       <div class="join join-vertical lg:join-horizontal w-full">
-        <a href="/admin/commandes" class="btn btn-outline join-item flex-1">
-          Gérer les commandes
-        </a>
-        <a href="/admin/menu" class="btn btn-outline join-item flex-1">
-          Modifier le menu
-        </a>
-        <a href="/admin/config" class="btn btn-outline join-item flex-1">
-          Configuration
-        </a>
+        <a href="/admin/commandes" class="btn btn-outline join-item flex-1">Commandes</a>
+        <a href="/admin/menu"      class="btn btn-outline join-item flex-1">Menu</a>
+        <a href="/admin/config"    class="btn btn-outline join-item flex-1">Configuration</a>
       </div>
     </div>
 
   </div>
 
+  <!-- Erreur -->
+  <div id="errorContent" class="hidden">
+    <div class="alert alert-error">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+      </svg>
+      <span id="errorMsg">Erreur de chargement</span>
+      <button class="btn btn-sm btn-ghost ml-auto" onclick="loadDashboard()">Réessayer</button>
+    </div>
+  </div>
+
+  <meta name="api-url" content={apiBaseUrl} />
+
 </AdminLayout>
 
 <script>
-// ==========================================
-// 🚀 Imports
-// ==========================================
-import { api } from '../../lib/api';
-
-// ==========================================
-// Utilitaires
-// ==========================================
-function formatPrice(price) {
-  return new Intl.NumberFormat('fr-BE', {
-    style: 'currency',
-    currency: 'EUR'
-  }).format(price);
-}
-
-function getStatusBadge(statut) {
-  const badges = {
-    'nouvelle': 'badge-warning',
-    'en_preparation': 'badge-info',
-    'prete': 'badge-success',
-    'en_livraison': 'badge-primary',
-    'livree': 'badge-success',
-    'terminee': 'badge-ghost',
-    'annulee': 'badge-error'
-  };
-  return badges[statut] || 'badge-ghost';
-}
-
-function getStatusLabel(statut) {
-  const labels = {
-    'nouvelle': 'Nouvelle',
-    'en_preparation': 'En préparation',
-    'prete': 'Prête',
-    'en_livraison': 'En livraison',
-    'livree': 'Livrée',
-    'terminee': 'Terminée',
-    'annulee': 'Annulée'
-  };
-  return labels[statut] || statut;
-}
-
-// ==========================================
-// Chargement Config & Thème
-// ==========================================
-async function loadConfig() {
-  try {
-    const config = await api.config.get();
-    
-    if (config.theme?.daisy) {
-      document.documentElement.setAttribute('data-theme', config.theme.daisy);
-    }
-    
-    if (config.theme?.logo) {
-      const logoUrl = api.images.getUrl(config.theme.logo);
-      const favicon = document.getElementById('favicon');
-      if (favicon) favicon.href = logoUrl;
-    }
-  } catch (error) {
-    console.error('❌ Erreur config:', error);
+  // ── Types ─────────────────────────────────────
+  interface Stats {
+    today_orders:  number;
+    pending_orders: number;
+    today_revenue: number;
+    average_order: number;
+    // Nouveau backend : tableau d'objets {nom, quantite}
+    top_products: Array<{ nom: string; quantite: number }>;
   }
-}
 
-// ==========================================
-// Charger les données du dashboard
-// ==========================================
-async function loadDashboard() {
-  try {
-    console.log('🔄 Chargement dashboard...');
-    
-    // ✅ Charger stats via api.ts
-    const stats = await api.stats.general();
+  interface Commande {
+    id: string; numero: string;
+    client?: { nom?: string };
+    prix_total: number;
+    statut: string;
+    date_creation: string;
+  }
 
-    document.getElementById('todayOrders').textContent = stats.today_orders || 0;
-    document.getElementById('pendingOrders').textContent = stats.pending_orders || 0;
-    document.getElementById('todayRevenue').textContent = formatPrice(stats.today_revenue || 0);
-    document.getElementById('averageOrder').textContent = formatPrice(stats.average_order || 0);
+  // ── Helpers ───────────────────────────────────
+  const fmt = (n: number) =>
+    new Intl.NumberFormat('fr-BE', { style: 'currency', currency: 'EUR' }).format(n);
 
-    // ✅ Charger commandes via api.ts
-    const commandesData = await api.commandes.list();
-    const recentOrders = (commandesData.commandes || [])
-      .sort((a, b) => new Date(b.date_creation) - new Date(a.date_creation))
-      .slice(0, 5);
+  function esc(v: unknown): string {
+    const d = document.createElement('div');
+    d.textContent = String(v ?? '');
+    return d.innerHTML;
+  }
 
-    const tableBody = document.getElementById('recentOrdersTable');
-    
-    if (recentOrders.length === 0) {
-      tableBody.innerHTML = `
-        <tr>
-          <td colspan="4" class="text-center text-base-content/60">
-            Aucune commande récente
-          </td>
-        </tr>
-      `;
-    } else {
-      tableBody.innerHTML = recentOrders.map(commande => `
-        <tr>
-          <td>
-            <a href="/admin/commandes?id=${commande.id}" class="link link-primary">
-              ${commande.numero}
-            </a>
-          </td>
-          <td>${commande.client?.nom || 'N/A'}</td>
-          <td>${formatPrice(commande.prix_total)}</td>
-          <td>
-            <span class="badge ${getStatusBadge(commande.statut)} badge-sm">
-              ${getStatusLabel(commande.statut)}
-            </span>
-          </td>
-        </tr>
-      `).join('');
-    }
+  function getApiBase(): string {
+    return document.querySelector<HTMLMetaElement>('meta[name="api-url"]')?.content
+      ?? 'http://127.0.0.1:5000/api';
+  }
 
-    // Top produits
-    const topProductsList = document.getElementById('topProductsList');
-    if (stats.top_products && stats.top_products.length > 0) {
-      topProductsList.innerHTML = stats.top_products.map(([nom, quantite], index) => `
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-3">
-            <div class="badge badge-primary badge-lg">${index + 1}</div>
-            <span class="font-medium">${nom}</span>
-          </div>
-          <div class="badge badge-ghost">${quantite} vendus</div>
-        </div>
-      `).join('');
-    } else {
-      topProductsList.innerHTML = `
-        <div class="text-center text-base-content/60 py-8">
-          Aucune vente enregistrée
-        </div>
-      `;
-    }
+  function getToken(): string {
+    const c = document.cookie.split(';').find(x => x.trim().startsWith('admin_token='));
+    return c ? decodeURIComponent(c.split('=')[1].trim()) : '';
+  }
 
-    console.log('✅ Dashboard chargé');
+  function authHeaders(): HeadersInit {
+    const t = getToken();
+    return t ? { 'Authorization': `Bearer ${t}`, 'Content-Type': 'application/json' } : {};
+  }
 
-    // Masquer loader, afficher contenu
-    document.getElementById('loader').classList.add('hidden');
-    document.getElementById('dashboardContent').classList.remove('hidden');
+  const STATUS_BADGE: Record<string, string> = {
+    nouvelle:       'badge-warning',
+    en_preparation: 'badge-info',
+    prete:          'badge-success',
+    en_livraison:   'badge-primary',
+    livree:         'badge-success',
+    terminee:       'badge-ghost',
+    annulee:        'badge-error',
+  };
 
-  } catch (error) {
-    console.error('❌ Erreur chargement dashboard:', error);
-    
-    // Gestion erreur auth
-    if (error.message.includes('Token') || error.message.includes('401')) {
-      alert('Session expirée, veuillez vous reconnecter');
-      window.location.href = '/login';
+  const STATUS_LABEL: Record<string, string> = {
+    nouvelle:       'Nouvelle',
+    en_preparation: 'En préparation',
+    prete:          'Prête',
+    en_livraison:   'En livraison',
+    livree:         'Livrée',
+    terminee:       'Terminée',
+    annulee:        'Annulée',
+  };
+
+  // ── Rendu ─────────────────────────────────────
+  function renderStats(stats: Stats) {
+    document.getElementById('todayOrders')!.textContent  = String(stats.today_orders  ?? 0);
+    document.getElementById('pendingOrders')!.textContent = String(stats.pending_orders ?? 0);
+    document.getElementById('todayRevenue')!.textContent  = fmt(stats.today_revenue  ?? 0);
+    document.getElementById('averageOrder')!.textContent  = fmt(stats.average_order  ?? 0);
+  }
+
+  function renderRecentOrders(commandes: Commande[]) {
+    const tbody = document.getElementById('recentOrdersTable')!;
+    tbody.innerHTML = '';
+
+    if (!commandes.length) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td colspan="4" class="text-center text-base-content/50 py-4">Aucune commande récente</td>';
+      tbody.appendChild(tr);
       return;
     }
-    
-    document.getElementById('loader').innerHTML = `
-      <div class="alert alert-error">
-        <span>Erreur de chargement des données</span>
-      </div>
-    `;
+
+    commandes.forEach(c => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><a href="/admin/commandes?id=${esc(c.id)}" class="link link-primary font-mono text-sm">${esc(c.numero)}</a></td>
+        <td class="text-sm">${esc(c.client?.nom ?? 'N/A')}</td>
+        <td class="tabular-nums text-sm">${fmt(c.prix_total)}</td>
+        <td><span class="badge ${STATUS_BADGE[c.statut] ?? 'badge-ghost'} badge-sm">${esc(STATUS_LABEL[c.statut] ?? c.statut)}</span></td>
+      `;
+      tbody.appendChild(tr);
+    });
   }
-}
 
-// ==========================================
-// Initialisation
-// ==========================================
-console.log('📊 Dashboard Admin chargé');
+  function renderTopProducts(products: Array<{ nom: string; quantite: number }>) {
+    const el = document.getElementById('topProductsList')!;
+    el.innerHTML = '';
 
-loadConfig();
-loadDashboard();
+    if (!products.length) {
+      el.innerHTML = '<p class="text-center text-base-content/50 py-8">Aucune vente enregistrée</p>';
+      return;
+    }
 
-// Auto-refresh toutes les 30 secondes
-setInterval(() => loadDashboard(), 30000);
+    products.forEach((p, i) => {
+      const row = document.createElement('div');
+      row.className = 'flex items-center justify-between gap-3';
+      row.innerHTML = `
+        <div class="flex items-center gap-3">
+          <div class="badge badge-primary badge-lg font-bold">${i + 1}</div>
+          <span class="font-medium text-sm">${esc(p.nom)}</span>
+        </div>
+        <span class="badge badge-ghost text-sm">${esc(p.quantite)} vendus</span>
+      `;
+      el.appendChild(row);
+    });
+  }
+
+  // ── Chargement ────────────────────────────────
+  async function loadDashboard() {
+    const loader  = document.getElementById('loader')!;
+    const content = document.getElementById('dashboardContent')!;
+    const errEl   = document.getElementById('errorContent')!;
+
+    loader.classList.remove('hidden');
+    content.classList.add('hidden');
+    errEl.classList.add('hidden');
+
+    try {
+      const API = getApiBase();
+      const headers = authHeaders();
+
+      const [statsRes, commandesRes] = await Promise.all([
+        fetch(`${API}/stats`,           { headers }),
+        fetch(`${API}/commandes?per_page=10`, { headers }),
+      ]);
+
+      // Gestion 401 → session expirée
+      if (statsRes.status === 401 || commandesRes.status === 401) {
+        window.location.href = '/login?expired=1';
+        return;
+      }
+
+      if (!statsRes.ok)     throw new Error(`Stats: ${statsRes.status}`);
+      if (!commandesRes.ok) throw new Error(`Commandes: ${commandesRes.status}`);
+
+      const stats: Stats                      = await statsRes.json();
+      const commandesData: { commandes: Commande[] } = await commandesRes.json();
+
+      renderStats(stats);
+
+      // 5 commandes les plus récentes
+      const recent = [...(commandesData.commandes ?? [])]
+        .sort((a, b) => new Date(b.date_creation).getTime() - new Date(a.date_creation).getTime())
+        .slice(0, 5);
+
+      renderRecentOrders(recent);
+      renderTopProducts(stats.top_products ?? []);
+
+      loader.classList.add('hidden');
+      content.classList.remove('hidden');
+
+    } catch (err: unknown) {
+      loader.classList.add('hidden');
+      const msg = err instanceof Error ? err.message : 'Erreur inconnue';
+      document.getElementById('errorMsg')!.textContent = `Erreur de chargement : ${msg}`;
+      errEl.classList.remove('hidden');
+    }
+  }
+
+  // Exposer pour le bouton "Réessayer"
+  (window as any).loadDashboard = loadDashboard;
+
+  // ── Init ──────────────────────────────────────
+  document.addEventListener('astro:page-load', () => {
+    void loadDashboard();
+    // Auto-refresh toutes les 30s
+    setInterval(() => void loadDashboard(), 30_000);
+  });
+
+  void loadDashboard();
 </script>

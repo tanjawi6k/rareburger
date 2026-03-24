@@ -1,292 +1,260 @@
 ---
 // src/pages/payment-cancel.astro
-// ============================================
-// ❌ CMDOLA - Paiement annulé
-// ============================================
+export const prerender = false;
 
 import Navbar from '../components/Navbar.astro';
+import api from '../lib/api';
 import '../assets/app.css';
 
-const orderId = Astro.url.searchParams.get('order');
-const reason = Astro.url.searchParams.get('reason');
+// ─────────────────────────────────────────
+// Thème SSR
+// ─────────────────────────────────────────
+const VALID_THEMES: readonly string[] = [
+  'light','dark','cupcake','bumblebee','emerald','corporate',
+  'synthwave','retro','cyberpunk','valentine','halloween','garden',
+  'forest','aqua','lofi','pastel','fantasy','wireframe','black',
+  'luxury','dracula','cmyk','autumn','business','acid','lemonade',
+  'night','coffee','winter','dim','nord','sunset',
+];
+const cookieTheme = Astro.cookies.get('theme')?.value;
 
-// ❌ SUPPRIMÉ: Plus besoin de ces variables
-// const restaurantId = import.meta.env.PUBLIC_DEFAULT_RESTAURANT_ID || 'rare-burger';
-// const apiBaseUrl = import.meta.env.PUBLIC_API_URL || 'https://api.cmdola.be/api';
+let theme          = 'light';
+let logoUrl        = '/favicon.ico';
+let restaurantName = 'CMDOLA';
+let restaurantTel  = '';
+
+try {
+  const configData = await api.config.get() as Record<string, any>;
+  const configTheme = (configData.theme as Record<string,string>|undefined)?.daisy;
+  theme = (cookieTheme && VALID_THEMES.includes(cookieTheme))
+    ? cookieTheme
+    : (configTheme && VALID_THEMES.includes(configTheme) ? configTheme : 'light');
+  const logoFile = (configData.theme as Record<string,string>|undefined)?.logo;
+  logoUrl        = logoFile ? api.images.getUrl(logoFile) : '/favicon.ico';
+  restaurantName = (configData.nom       as string|undefined) ?? 'CMDOLA';
+  restaurantTel  = (configData.telephone as string|undefined) ?? '';
+} catch { /* thème par défaut */ }
+
+// ─────────────────────────────────────────
+// Paramètres URL
+// ─────────────────────────────────────────
+const orderId = Astro.url.searchParams.get('order') ?? '';
+const reason  = Astro.url.searchParams.get('reason') ?? 'default';
+
+const apiBaseUrl: string = import.meta.env.PUBLIC_API_URL ?? 'http://127.0.0.1:5000/api';
+
+// ─────────────────────────────────────────
+// Messages selon la raison (SSR — pas de XSS possible)
+// ─────────────────────────────────────────
+interface ReasonData { title: string; points: string[]; }
+
+const REASONS: Record<string, ReasonData> = {
+  payment_pending: {
+    title: 'Paiement non confirmé',
+    points: [
+      'Vous avez annulé le paiement sur la page Stripe',
+      'Votre carte a été refusée par votre banque',
+      'Une erreur technique s\'est produite',
+      'Le délai de paiement a expiré',
+    ],
+  },
+  cancelled: {
+    title: 'Paiement annulé',
+    points: ['Vous avez annulé le processus de paiement.', 'Aucun montant n\'a été débité de votre compte.'],
+  },
+  insufficient_funds: {
+    title: 'Fonds insuffisants',
+    points: ['Votre carte ne dispose pas de fonds suffisants.', 'Utilisez une autre carte ou un autre mode de paiement.'],
+  },
+  card_declined: {
+    title: 'Carte refusée',
+    points: [
+      'Vérifiez que vous avez saisi les bonnes informations',
+      'Contactez votre banque si le problème persiste',
+      'Essayez avec une autre carte',
+    ],
+  },
+  expired_card: {
+    title: 'Carte expirée',
+    points: ['La carte utilisée est expirée.', 'Veuillez utiliser une carte valide.'],
+  },
+  processing_error: {
+    title: 'Erreur de traitement',
+    points: ['Une erreur technique est survenue.', 'Veuillez réessayer dans quelques instants.'],
+  },
+  default: {
+    title: 'Paiement non finalisé',
+    points: ['Votre paiement n\'a pas pu être finalisé.', 'Vérifiez vos informations bancaires et réessayez.'],
+  },
+};
+
+const reasonData: ReasonData = REASONS[reason] ?? REASONS.default;
 ---
 
 <!DOCTYPE html>
-<html lang="fr" >
+<html lang="fr" data-theme={theme}>
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
-  <title>Paiement annulé - CMDOLA</title>
-  <link rel="icon" type="image/png" href="/favicon.ico" id="favicon">
+  <meta name="api-url" content={apiBaseUrl} />
+  <title>Paiement annulé — {restaurantName}</title>
+  <link rel="icon" type="image/png" href={logoUrl} />
+
+  <!-- Anti-FOUC thème -->
+  <script is:inline>
+    (function(){
+      var v=['light','dark','cupcake','bumblebee','emerald','corporate',
+        'synthwave','retro','cyberpunk','valentine','halloween','garden','forest',
+        'aqua','lofi','pastel','fantasy','wireframe','black','luxury','dracula',
+        'cmyk','autumn','business','acid','lemonade','night','coffee','winter',
+        'dim','nord','sunset'];
+      var c=document.cookie.split(';').find(function(x){return x.trim().startsWith('theme=');});
+      var t=c?decodeURIComponent(c.split('=')[1].trim()):null;
+      if(t&&v.indexOf(t)!==-1) document.documentElement.setAttribute('data-theme',t);
+    }());
+  </script>
 </head>
 
-<body class="bg-base-200 min-h-screen">
-  
-  <Navbar />
-  
-  <div class="container mx-auto px-4 py-8">
-    
-    <div class="max-w-2xl mx-auto">
-      
-      <!-- Message d'erreur principal -->
-      <div class="alert alert-error shadow-lg mb-6">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 shrink-0 stroke-current" fill="none" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+<body class="bg-base-200" style="min-height:100dvh;min-height:100vh;">
+
+  <header class="sticky top-0 z-40">
+    <Navbar restaurantName={restaurantName} logoUrl={logoUrl} activePage="" />
+  </header>
+
+  <main class="container mx-auto px-4 py-8 max-w-xl">
+
+    <!-- Icône + titre -->
+    <div class="text-center mb-6">
+      <div class="text-6xl mb-3" aria-hidden="true">❌</div>
+      <h1 class="text-2xl font-bold text-base-content">{reasonData.title}</h1>
+      <p class="text-base-content/60 text-sm mt-1">Aucun montant n'a été débité</p>
+    </div>
+
+    <!-- Explication (rendu SSR — pas de XSS) -->
+    <div class="card bg-base-100 shadow-sm mb-4">
+      <div class="card-body gap-3">
+        <h2 class="font-bold text-base">Que s'est-il passé ?</h2>
+        <ul class="space-y-2">
+          {reasonData.points.map(p => (
+            <li class="flex items-start gap-2 text-sm text-base-content/70">
+              <span class="text-base-content/30 mt-0.5 shrink-0">•</span>
+              <span>{p}</span>
+            </li>
+          ))}
+        </ul>
+
+        <div class="alert alert-success text-sm rounded-xl py-3 mt-1">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+          <p>Bonne nouvelle — votre panier a été conservé. Vous pouvez réessayer à tout moment.</p>
+        </div>
+
+        <!-- Numéro de commande (affiché par JS si récupéré) -->
+        <div id="order-info" class="hidden bg-base-200 rounded-xl px-4 py-3">
+          <p class="text-xs text-base-content/50 mb-1">Numéro de commande</p>
+          <p class="font-mono font-bold text-base" id="order-numero"></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="card bg-base-100 shadow-sm mb-4">
+      <div class="card-body gap-3">
+
+        <!-- Réessayer paiement Stripe (affiché si orderId disponible) -->
+        {orderId && (
+          <a
+            href={`/stripe-checkout?order=${orderId}`}
+            class="btn btn-primary btn-block gap-2"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            </svg>
+            Réessayer le paiement
+          </a>
+        )}
+
+        <!-- Retour au panier -->
+        <a href="/cart" class="btn btn-outline btn-block gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/>
+          </svg>
+          Retourner au panier
+        </a>
+
+        <div class="divider text-xs my-0">ou</div>
+
+        <!-- Changer mode de paiement -->
+        <a href="/checkout" class="btn btn-ghost btn-block gap-2 btn-sm">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+          </svg>
+          Choisir un autre mode de paiement
+        </a>
+
+        <!-- Retour au menu -->
+        <a href="/menu" class="btn btn-ghost btn-block gap-2 btn-sm">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7"/>
+          </svg>
+          Retour au menu
+        </a>
+
+      </div>
+    </div>
+
+    <!-- Aide -->
+    {restaurantTel && (
+      <div class="alert text-sm rounded-xl">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
         </svg>
         <div>
-          <h3 class="font-bold text-xl">Paiement non finalisé</h3>
-          <div class="text-sm mt-1" id="error-message">Votre paiement n'a pas pu être finalisé</div>
-        </div>
-      </div>
-
-      <!-- Carte d'explication -->
-      <div class="card bg-base-100 shadow-sm mb-6">
-        <div class="card-body">
-          <h2 class="card-title">Que s'est-il passé ?</h2>
-          <div class="divider my-2"></div>
-          
-          <div class="space-y-4">
-            <div id="reason-explanation" class="text-base-content/80">
-              <!-- Rempli par JS selon la raison -->
-            </div>
-
-            <div class="alert alert-info">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <div class="text-sm">
-                <p class="font-semibold">Bonne nouvelle !</p>
-                <p>Votre panier a été conservé. Vous pouvez réessayer votre paiement à tout moment.</p>
-              </div>
-            </div>
-
-            <div id="order-info" class="bg-base-200 p-4 rounded-lg" style="display: none;">
-              <p class="text-sm text-base-content/70 mb-2">Numéro de commande :</p>
-              <p class="font-mono font-bold text-lg" id="order-numero"></p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Actions -->
-      <div class="card bg-base-100 shadow-sm">
-        <div class="card-body">
-          <h3 class="card-title">Que voulez-vous faire ?</h3>
-          <div class="divider my-2"></div>
-          
-          <div class="space-y-3">
-            
-            <!-- Retour au panier -->
-            <a href="/cart" class="btn btn-primary btn-block btn-lg">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
-              </svg>
-              Retourner au panier
-            </a>
-
-            <!-- Réessayer le paiement -->
-            <button id="retry-payment-btn" class="btn btn-outline btn-block" style="display: none;">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              Réessayer le paiement
-            </button>
-
-            <div class="divider">OU</div>
-
-            <!-- Changer le mode de paiement -->
-            <a href="/checkout" class="btn btn-ghost btn-block">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-              </svg>
-              Choisir un autre mode de paiement
-            </a>
-
-            <!-- Retour au menu -->
-            <a href="/menu" class="btn btn-ghost btn-block">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-              </svg>
-              Retour au menu
-            </a>
-
-          </div>
-        </div>
-      </div>
-
-      <!-- Aide -->
-      <div class="alert mt-6">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
-        <div class="text-sm">
           <p class="font-semibold">Besoin d'aide ?</p>
-          <p>Si vous rencontrez des difficultés, n'hésitez pas à <a href="/contact" class="link link-primary">nous contacter</a></p>
+          <p>Appelez-nous au <a href={`tel:${restaurantTel.replace(/\s/g,'')}`} class="link link-primary font-semibold">{restaurantTel}</a></p>
         </div>
       </div>
+    )}
 
-    </div>
-  </div>
+  </main>
 
 </body>
 </html>
 
-<!-- Script 1 : Config et imports -->
+<style>
+  @media (pointer: coarse) { button, a { min-height: 44px; } }
+</style>
+
+<!--
+  Script minimal — récupère le numéro de commande via l'endpoint public /track
+  si un orderId est dans l'URL. Pas d'import relatif, fetch direct.
+-->
 <script>
-  import api from '../lib/api';
-
-  // Charger le thème et logo dynamiquement
-  async function loadConfig() {
-    try {
-      const config = await api.config.get();
-      
-      if (config.theme?.daisy) {
-        document.documentElement.setAttribute('data-theme', config.theme.daisy);
-      }
-      
-      if (config.theme?.logo) {
-        const logoUrl = api.images.getUrl(config.theme.logo);
-        const favicon = document.getElementById('favicon');
-        if (favicon) favicon.href = logoUrl;
-      }
-    } catch (error) {
-      console.error('❌ Erreur config:', error);
-      document.documentElement.setAttribute('data-theme', 'autumn');
-    }
+  function getApiBase(): string {
+    return document.querySelector<HTMLMetaElement>('meta[name="api-url"]')?.content
+      ?? 'http://127.0.0.1:5000/api';
   }
 
-  loadConfig();
-</script>
-
-<!-- Script 2 : Logique métier -->
-<script define:vars={{ orderId, reason }}>
-  import api from '../lib/api';
-
-  // Messages selon la raison
-  const reasonMessages = {
-    'payment_pending': {
-      title: 'Paiement non confirmé',
-      description: `
-        <p class="mb-3">Le paiement n'a pas été finalisé avec succès. Cela peut arriver pour plusieurs raisons :</p>
-        <ul class="list-disc list-inside space-y-2 ml-4">
-          <li>Vous avez annulé le paiement sur la page Stripe</li>
-          <li>Votre carte a été refusée par votre banque</li>
-          <li>Une erreur technique s'est produite</li>
-          <li>Le délai de paiement a expiré</li>
-        </ul>
-      `
-    },
-    'cancelled': {
-      title: 'Paiement annulé',
-      description: `
-        <p class="mb-3">Vous avez annulé le processus de paiement.</p>
-        <p>Aucun montant n'a été débité de votre compte.</p>
-      `
-    },
-    'insufficient_funds': {
-      title: 'Fonds insuffisants',
-      description: `
-        <p class="mb-3">Votre carte ne dispose pas de fonds suffisants pour effectuer ce paiement.</p>
-        <p>Veuillez utiliser une autre carte ou un autre mode de paiement.</p>
-      `
-    },
-    'card_declined': {
-      title: 'Carte refusée',
-      description: `
-        <p class="mb-3">Votre carte bancaire a été refusée.</p>
-        <ul class="list-disc list-inside space-y-2 ml-4">
-          <li>Vérifiez que vous avez saisi les bonnes informations</li>
-          <li>Contactez votre banque si le problème persiste</li>
-          <li>Essayez avec une autre carte</li>
-        </ul>
-      `
-    },
-    'expired_card': {
-      title: 'Carte expirée',
-      description: `
-        <p class="mb-3">La carte bancaire utilisée est expirée.</p>
-        <p>Veuillez utiliser une carte valide.</p>
-      `
-    },
-    'processing_error': {
-      title: 'Erreur de traitement',
-      description: `
-        <p class="mb-3">Une erreur technique est survenue lors du traitement de votre paiement.</p>
-        <p>Veuillez réessayer dans quelques instants.</p>
-      `
-    },
-    'default': {
-      title: 'Paiement non finalisé',
-      description: `
-        <p class="mb-3">Votre paiement n'a pas pu être finalisé.</p>
-        <p>Veuillez vérifier vos informations bancaires et réessayer.</p>
-      `
-    }
-  };
-
-  // Afficher le message selon la raison
-  function displayReason() {
-    const reasonData = reasonMessages[reason] || reasonMessages['default'];
-    
-    document.getElementById('error-message').textContent = reasonData.title;
-    document.getElementById('reason-explanation').innerHTML = reasonData.description;
-  }
-
-  // Charger les infos de commande si disponible
-  async function loadOrderInfo() {
+  async function init() {
+    // Lire orderId depuis l'URL côté client
+    const params  = new URLSearchParams(window.location.search);
+    const orderId = params.get('order');
     if (!orderId) return;
 
+    // Tenter de récupérer le numéro via l'endpoint public /track
     try {
-      // ⚠️ Cette route nécessite probablement un token admin
-      // Pour l'instant on essaye sans token (route publique pour tracking)
-      // Si ça échoue, c'est normal - le client ne peut pas accéder aux détails de commande sans auth
-      
-      // Note: Si tu veux que les clients puissent voir leur commande sans être admin,
-      // il faudrait créer une route publique spécifique dans le backend comme:
-      // GET /api/commandes/track/{order_id}?email={email}
-      
-      const response = await fetch(`${api.API_BASE_URL}/commandes/${orderId}`);
-      if (response.ok) {
-        const order = await response.json();
-        
-        document.getElementById('order-numero').textContent = order.numero;
-        document.getElementById('order-info').style.display = 'block';
-        
-        // Afficher le bouton réessayer
-        const retryBtn = document.getElementById('retry-payment-btn');
-        retryBtn.style.display = 'block';
-        
-        retryBtn.addEventListener('click', () => {
-          window.location.href = `/stripe-checkout?order=${orderId}`;
-        });
-      } else {
-        console.warn('⚠️ Impossible de charger les détails de la commande (besoin authentification admin)');
-        // Pas grave, on continue sans afficher le numéro de commande
+      const res = await fetch(`${getApiBase()}/commandes/track/${encodeURIComponent(orderId)}`);
+      if (!res.ok) return;
+      const order = await res.json() as { numero?: string };
+      if (order.numero) {
+        document.getElementById('order-numero')!.textContent = order.numero;
+        document.getElementById('order-info')!.classList.remove('hidden');
       }
-    } catch (error) {
-      console.error('❌ Erreur chargement commande:', error);
-      // Pas grave, la page fonctionne quand même
-    }
+    } catch { /* silencieux — pas critique */ }
   }
 
-  // Vérifier que le panier existe
-  function checkCart() {
-    const cart = JSON.parse(localStorage.getItem('cart') || '[]');
-    
-    if (cart.length === 0) {
-      console.log('⚠️ Panier vide');
-    } else {
-      console.log(`✅ Panier conservé: ${cart.length} articles`);
-    }
-  }
-
-  // Init
-  displayReason();
-  loadOrderInfo();
-  checkCart();
+  document.addEventListener('astro:page-load', init);
+  init();
 </script>

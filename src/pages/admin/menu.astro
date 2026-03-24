@@ -1,673 +1,714 @@
 ---
 // src/pages/admin/menu.astro
 import AdminLayout from '../../layouts/AdminLayout.astro';
-
 export const prerender = false;
 
-const RESTAURANT_ID = import.meta.env.PUBLIC_DEFAULT_RESTAURANT_ID || 'rare-burger';
+const user = Astro.locals.user;
+if (!user?.roles.includes('admin')) return Astro.redirect('/login');
+
+const apiBaseUrl: string = import.meta.env.PUBLIC_API_URL ?? 'http://127.0.0.1:5000/api';
 ---
 
 <AdminLayout title="Menu">
-  
-  <div id="loader" class="flex justify-center items-center py-20">
-    <span class="loading loading-spinner loading-lg"></span>
-  </div>
 
-  <div class="mb-6">
-    <div class="flex justify-between items-center">
-      <div>
-        <h1 class="text-3xl font-bold">Gestion du menu</h1>
-        <p class="text-base-content/60">Gérez vos produits, catégories et suppléments</p>
-      </div>
-      <div class="flex gap-2">
-        <button class="btn btn-ghost" onclick="openManageCategoriesModal()">
-          Gérer catégories
-        </button>
-        <button class="btn btn-ghost" onclick="openManageSupplementsModal()">
-          Gérer suppléments
-        </button>
-        <button class="btn btn-primary" onclick="addProductModal.showModal()">
-          Ajouter un produit
-        </button>
-      </div>
+  <!-- En-tête -->
+  <div class="mb-6 flex justify-between items-start flex-wrap gap-3">
+    <div>
+      <h1 class="text-3xl font-bold">Menu</h1>
+      <p class="text-base-content/60">Produits, catégories et suppléments</p>
+    </div>
+    <div class="flex gap-2 flex-wrap">
+      <button class="btn btn-ghost btn-sm" id="btnManageCats">Catégories</button>
+      <button class="btn btn-ghost btn-sm" id="btnManageSupps">Suppléments</button>
+      <button class="btn btn-primary btn-sm" id="btnAddProduct">+ Produit</button>
     </div>
   </div>
 
-  <!-- Filtres -->
-  <div class="flex gap-2 mb-6 overflow-x-auto pb-2">
-    <button class="btn btn-sm category-filter active" data-category="">Tous</button>
-    <div id="categoryFilters"></div>
+  <!-- Loader -->
+  <div id="loader" class="flex justify-center py-20">
+    <span class="loading loading-spinner loading-lg text-primary"></span>
   </div>
 
-  <!-- Grid produits -->
-  <div id="produitsGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+  <!-- Filtres catégories -->
+  <div id="catFiltersWrap" class="flex gap-2 mb-5 overflow-x-auto pb-1 hidden">
+    <button class="btn btn-sm btn-primary" data-cat="" id="filterAll">Tous</button>
+    <div id="catFilterBtns" class="flex gap-2"></div>
   </div>
 
-  <!-- Modal Produit -->
-  <dialog id="addProductModal" class="modal">
-    <div class="modal-box max-w-4xl">
+  <!-- Grille produits -->
+  <div id="produitsGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"></div>
+
+  <!-- Vide -->
+  <div id="emptyProducts" class="hidden text-center py-16">
+    <span class="text-6xl" aria-hidden="true">🍽️</span>
+    <h3 class="text-xl font-bold mt-3 mb-1">Aucun produit</h3>
+    <p class="text-base-content/60 text-sm">Ajoutez votre premier produit</p>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast-container" class="toast toast-top toast-end z-50" aria-live="polite"></div>
+
+  <!-- ── Modal Produit ─────────────────────────── -->
+  <dialog id="productModal" class="modal">
+    <div class="modal-box max-w-3xl">
       <form method="dialog">
-        <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+        <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" aria-label="Fermer">✕</button>
       </form>
-      
-      <h3 class="font-bold text-lg mb-4" id="modalTitle">Ajouter un produit</h3>
-      
+      <h3 class="font-bold text-lg mb-5" id="productModalTitle">Ajouter un produit</h3>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        
         <div class="form-control md:col-span-2">
-          <label class="label"><span class="label-text">Nom du produit</span></label>
-          <input type="text" id="produitNom" class="input input-bordered" required />
+          <label class="label" for="prodNom"><span class="label-text">Nom *</span></label>
+          <input id="prodNom" type="text" class="input input-bordered" required />
         </div>
-
         <div class="form-control md:col-span-2">
-          <label class="label"><span class="label-text">Description</span></label>
-          <textarea id="produitDescription" class="textarea textarea-bordered h-20"></textarea>
+          <label class="label" for="prodDesc"><span class="label-text">Description</span></label>
+          <textarea id="prodDesc" class="textarea textarea-bordered h-20"></textarea>
         </div>
-
         <div class="form-control">
-          <label class="label"><span class="label-text">Prix (€)</span></label>
-          <input type="number" step="0.01" id="produitPrix" class="input input-bordered" required />
+          <label class="label" for="prodPrix"><span class="label-text">Prix (€) *</span></label>
+          <input id="prodPrix" type="number" step="0.01" min="0" class="input input-bordered" />
         </div>
-
         <div class="form-control">
-          <label class="label"><span class="label-text">Catégorie</span></label>
-          <select id="produitCategory" class="select select-bordered">
-          </select>
+          <label class="label" for="prodCat"><span class="label-text">Catégorie</span></label>
+          <select id="prodCat" class="select select-bordered"></select>
         </div>
-
         <div class="form-control md:col-span-2">
-          <label class="label"><span class="label-text">Images</span></label>
-          <input type="file" id="produitImages" class="file-input file-input-bordered" accept="image/*" multiple />
+          <label class="label" for="prodImages"><span class="label-text">Images</span></label>
+          <input id="prodImages" type="file" class="file-input file-input-bordered" accept="image/*" multiple />
           <div id="imagePreview" class="flex gap-2 mt-2 flex-wrap"></div>
         </div>
-
         <div class="form-control md:col-span-2">
-          <label class="label"><span class="label-text">Suppléments disponibles</span></label>
-          <div id="supplementsCheckboxes" class="flex flex-wrap gap-2"></div>
+          <label class="label"><span class="label-text">Suppléments</span></label>
+          <div id="suppCheckboxes" class="flex flex-wrap gap-2"></div>
         </div>
-
         <div class="form-control md:col-span-2">
-          <label class="label"><span class="label-text">Ingrédients retirables (séparés par des virgules)</span></label>
-          <input type="text" id="produitRemovable" class="input input-bordered" placeholder="salade, tomate, oignon" />
+          <label class="label" for="prodRemovable"><span class="label-text">Ingrédients retirables (virgule)</span></label>
+          <input id="prodRemovable" type="text" class="input input-bordered" placeholder="salade, tomate, oignon" />
         </div>
-
         <div class="form-control md:col-span-2">
-          <label class="label"><span class="label-text">Allergènes (séparés par des virgules)</span></label>
-          <input type="text" id="produitAllergenes" class="input input-bordered" placeholder="gluten, lactose" />
+          <label class="label" for="prodAllergenes"><span class="label-text">Allergènes (virgule)</span></label>
+          <input id="prodAllergenes" type="text" class="input input-bordered" placeholder="gluten, lactose" />
         </div>
-
         <div class="form-control">
           <label class="label cursor-pointer">
-            <span class="label-text">Produit populaire</span>
-            <input type="checkbox" id="produitPopular" class="checkbox" />
+            <span class="label-text">Produit populaire ★</span>
+            <input id="prodPopular" type="checkbox" class="checkbox" />
           </label>
         </div>
-
         <div class="form-control">
           <label class="label cursor-pointer">
             <span class="label-text">Disponible</span>
-            <input type="checkbox" id="produitDisponible" class="checkbox" checked />
+            <input id="prodDisponible" type="checkbox" class="checkbox" checked />
           </label>
         </div>
-
       </div>
-
       <div class="modal-action">
-        <button class="btn" onclick="addProductModal.close()">Annuler</button>
+        <button class="btn btn-ghost" id="cancelProductBtn">Annuler</button>
         <button class="btn btn-primary" id="saveProductBtn">Enregistrer</button>
       </div>
     </div>
+    <form method="dialog" class="modal-backdrop"><button>fermer</button></form>
   </dialog>
 
-  <!-- Modal Gérer Catégories -->
-  <dialog id="manageCategoriesModal" class="modal">
-    <div class="modal-box max-w-2xl">
+  <!-- ── Modal Catégories ──────────────────────── -->
+  <dialog id="catsModal" class="modal">
+    <div class="modal-box max-w-lg">
       <form method="dialog">
-        <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+        <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" aria-label="Fermer">✕</button>
       </form>
-      
-      <h3 class="font-bold text-lg mb-4">Gérer les catégories</h3>
-      
-      <!-- Formulaire ajout -->
+      <h3 class="font-bold text-lg mb-4">Catégories</h3>
       <div class="card bg-base-200 p-4 mb-4">
-        <h4 class="font-bold mb-2">Ajouter une catégorie</h4>
+        <p class="text-sm font-semibold mb-2">Ajouter</p>
         <div class="flex gap-2">
-          <input type="text" id="newCategoryName" class="input input-bordered input-sm flex-1" placeholder="Nom" />
-          <input type="text" id="newCategoryIcon" class="input input-bordered input-sm w-20" placeholder="🍔" />
-          <button class="btn btn-sm btn-primary" id="addCategoryBtn">Ajouter</button>
+          <input id="newCatName" type="text" class="input input-sm input-bordered flex-1" placeholder="Nom" />
+          <input id="newCatIcon" type="text" class="input input-sm input-bordered w-16 text-center" placeholder="🍔" />
+          <button class="btn btn-sm btn-primary" id="addCatBtn">Ajouter</button>
         </div>
       </div>
-
-      <!-- Liste catégories -->
-      <div class="space-y-2" id="categoriesManageList">
-      </div>
+      <div id="catsManageList" class="space-y-2"></div>
     </div>
+    <form method="dialog" class="modal-backdrop"><button>fermer</button></form>
   </dialog>
 
-  <!-- Modal Gérer Suppléments -->
-  <dialog id="manageSupplementsModal" class="modal">
-    <div class="modal-box max-w-2xl">
+  <!-- ── Modal Suppléments ─────────────────────── -->
+  <dialog id="suppsModal" class="modal">
+    <div class="modal-box max-w-lg">
       <form method="dialog">
-        <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+        <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" aria-label="Fermer">✕</button>
       </form>
-      
-      <h3 class="font-bold text-lg mb-4">Gérer les suppléments</h3>
-      
-      <!-- Formulaire ajout -->
+      <h3 class="font-bold text-lg mb-4">Suppléments</h3>
       <div class="card bg-base-200 p-4 mb-4">
-        <h4 class="font-bold mb-2">Ajouter un supplément</h4>
+        <p class="text-sm font-semibold mb-2">Ajouter</p>
         <div class="flex gap-2">
-          <input type="text" id="newSupplementName" class="input input-bordered input-sm flex-1" placeholder="Nom" />
-          <input type="number" step="0.01" id="newSupplementPrice" class="input input-bordered input-sm w-32" placeholder="Prix" />
-          <button class="btn btn-sm btn-primary" id="addSupplementBtn">Ajouter</button>
+          <input id="newSuppName"  type="text"   class="input input-sm input-bordered flex-1" placeholder="Nom" />
+          <input id="newSuppPrice" type="number" step="0.01" min="0" class="input input-sm input-bordered w-28" placeholder="Prix €" />
+          <button class="btn btn-sm btn-primary" id="addSuppBtn">Ajouter</button>
         </div>
       </div>
-
-      <!-- Liste suppléments -->
-      <div class="space-y-2" id="supplementsManageList">
-      </div>
+      <div id="suppsManageList" class="space-y-2"></div>
     </div>
+    <form method="dialog" class="modal-backdrop"><button>fermer</button></form>
   </dialog>
 
-  <!-- Modal Catégorie -->
-  <dialog id="addCategoryModal" class="modal">
+  <!-- ── Modal confirmation suppression ───────── -->
+  <dialog id="confirmDelModal" class="modal modal-bottom sm:modal-middle">
     <div class="modal-box">
-      <form method="dialog">
-        <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
-      </form>
-      
-      <h3 class="font-bold text-lg mb-4">Ajouter une catégorie</h3>
-      
-      <div class="form-control">
-        <label class="label"><span class="label-text">Nom</span></label>
-        <input type="text" id="categoryName" class="input input-bordered" />
-      </div>
-
-      <div class="form-control mt-4">
-        <label class="label"><span class="label-text">Icône (emoji)</span></label>
-        <input type="text" id="categoryIcon" class="input input-bordered" placeholder="🍔" />
-      </div>
-
+      <h3 class="font-bold text-lg">Confirmer la suppression</h3>
+      <p class="py-3 text-sm text-base-content/70" id="confirmDelMsg"></p>
       <div class="modal-action">
-        <button class="btn" onclick="addCategoryModal.close()">Annuler</button>
-        <button class="btn btn-primary" id="saveCategoryBtn">Enregistrer</button>
+        <form method="dialog"><button class="btn btn-ghost btn-sm">Annuler</button></form>
+        <button class="btn btn-error btn-sm" id="confirmDelYes">Supprimer</button>
       </div>
     </div>
+    <form method="dialog" class="modal-backdrop"><button>fermer</button></form>
   </dialog>
 
-  <!-- Modal Supplément -->
-  <dialog id="addSupplementModal" class="modal">
-    <div class="modal-box">
-      <form method="dialog">
-        <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
-      </form>
-      
-      <h3 class="font-bold text-lg mb-4">Ajouter un supplément</h3>
-      
-      <div class="form-control">
-        <label class="label"><span class="label-text">Nom</span></label>
-        <input type="text" id="supplementName" class="input input-bordered" />
-      </div>
-
-      <div class="form-control mt-4">
-        <label class="label"><span class="label-text">Prix (€)</span></label>
-        <input type="number" step="0.01" id="supplementPrice" class="input input-bordered" />
-      </div>
-
-      <div class="modal-action">
-        <button class="btn" onclick="addSupplementModal.close()">Annuler</button>
-        <button class="btn btn-primary" id="saveSupplementBtn">Enregistrer</button>
-      </div>
-    </div>
-  </dialog>
-
+  <meta name="api-url" content={apiBaseUrl} />
 </AdminLayout>
 
 <script>
-  import { api } from '../../lib/api';
-  let menuData = { categories: [], supplements: [], produits: [] };
-  let currentFilter = '';
-  let editingProductId = null;
+  // ── Types ─────────────────────────────────────
+  interface Category    { id: string; name: string; icon: string; }
+  interface Supplement  { id: string; name: string; price: number; }
+  interface Produit {
+    id: string; nom: string; description?: string; prix: number;
+    category?: string; images?: string[]; supplements?: string[];
+    removable_ingredients?: string[]; allergenes?: string[];
+    popular?: boolean; disponible: boolean;
+  }
+  interface MenuData {
+    categories: Category[]; supplements: Supplement[]; produits: Produit[];
+  }
 
-  const formatPrice = (price) => {
-    return new Intl.NumberFormat('fr-BE', {
-      style: 'currency',
-      currency: 'EUR'
-    }).format(price);
-  };
+  // ── État ──────────────────────────────────────
+  let menu: MenuData = { categories: [], supplements: [], produits: [] };
+  let currentCat  = '';
+  let editId: string | null = null;
+  let pendingDelFn: (() => Promise<void>) | null = null;
 
+  // ── Helpers ───────────────────────────────────
+  function getApiBase() {
+    return document.querySelector<HTMLMetaElement>('meta[name="api-url"]')?.content
+      ?? 'http://127.0.0.1:5000/api';
+  }
+  function getToken() {
+    const c = document.cookie.split(';').find(x => x.trim().startsWith('admin_token='));
+    return c ? decodeURIComponent(c.split('=')[1].trim()) : '';
+  }
+  function authH(): Record<string,string> {
+    return { 'Authorization': `Bearer ${getToken()}`, 'Content-Type': 'application/json' };
+  }
+  function authHNoJson(): Record<string,string> {
+    return { 'Authorization': `Bearer ${getToken()}` };
+  }
+  function esc(v: unknown): string {
+    const d = document.createElement('div');
+    d.textContent = String(v ?? '');
+    return d.innerHTML;
+  }
+  const fmt = (n: number) =>
+    new Intl.NumberFormat('fr-BE', { style:'currency', currency:'EUR' }).format(n);
+
+  function showToast(msg: string, type: 'success'|'error'|'info'|'warning' = 'info') {
+    const c = document.getElementById('toast-container')!;
+    const el = document.createElement('div');
+    el.className = `alert alert-${type} shadow-md text-sm py-2 px-4 rounded-xl`;
+    el.textContent = msg;
+    c.appendChild(el);
+    setTimeout(() => el.remove(), 3500);
+  }
+
+  function q<T extends HTMLElement>(id: string) { return document.getElementById(id) as T; }
+
+  function confirmDel(msg: string, fn: () => Promise<void>) {
+    pendingDelFn = fn;
+    q('confirmDelMsg').textContent = msg;
+    (q('confirmDelModal') as HTMLDialogElement).showModal();
+  }
+
+  q('confirmDelYes').addEventListener('click', async () => {
+    (q('confirmDelModal') as HTMLDialogElement).close();
+    if (pendingDelFn) { await pendingDelFn(); pendingDelFn = null; }
+  });
+
+  // ── Fetch helpers ─────────────────────────────
+  async function apiFetch<T>(path: string, opts: RequestInit = {}): Promise<T> {
+    const res = await fetch(`${getApiBase()}${path}`, opts);
+    if (res.status === 401) { window.location.href = '/login?expired=1'; throw new Error('401'); }
+    if (!res.ok) {
+      const b = await res.json().catch(() => ({}));
+      throw new Error((b as any).error ?? `HTTP ${res.status}`);
+    }
+    return res.json() as Promise<T>;
+  }
+
+  // ── Chargement ────────────────────────────────
   async function loadMenu() {
     try {
-      menuData = await api.menu.get();
-      renderCategoryFilters();
+      const raw = await apiFetch<any>('/menu', { headers: authH() });
+      // Support deux formats selon ce que retourne le backend :
+      // 1. Plat  : { categories, supplements, produits }
+      // 2. Imbriqué : { menu: { categories, supplements, produits } }
+      const data = (raw.menu && typeof raw.menu === 'object') ? raw.menu : raw;
+      menu = {
+        categories:  Array.isArray(data.categories)  ? data.categories  : [],
+        supplements: Array.isArray(data.supplements) ? data.supplements : [],
+        produits:    Array.isArray(data.produits)    ? data.produits    : [],
+      };
+      renderCatFilters();
       renderProduits();
-      document.getElementById('loader').classList.add('hidden');
-    } catch (error) {
-      console.error('Erreur chargement menu:', error);
+      populateCatSelect();
+      renderSuppCheckboxes();
+      q('loader').classList.add('hidden');
+      q('catFiltersWrap').classList.remove('hidden');
+    } catch (err: unknown) {
+      q('loader').innerHTML = `<div class="alert alert-error"><span>${esc(err instanceof Error ? err.message : String(err))}</span></div>`;
     }
   }
 
-  function renderCategoryFilters() {
-    const container = document.getElementById('categoryFilters');
-    container.innerHTML = menuData.categories.map(cat => `
-      <button class="btn btn-sm category-filter" data-category="${cat.id}">
-        ${cat.icon} ${cat.name}
-      </button>
-    `).join('');
-
-    document.querySelectorAll('.category-filter').forEach(btn => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('.category-filter').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        currentFilter = btn.dataset.category;
-        renderProduits();
-      });
+  // ── Filtres catégories ─────────────────────────
+  function renderCatFilters() {
+    const wrap = q('catFilterBtns');
+    wrap.innerHTML = '';
+    menu.categories.forEach(cat => {
+      const btn = document.createElement('button');
+      btn.className = 'btn btn-sm btn-ghost';
+      btn.dataset.cat = cat.id;
+      btn.textContent = `${cat.icon} ${cat.name}`;
+      btn.addEventListener('click', () => setCatFilter(cat.id));
+      wrap.appendChild(btn);
     });
   }
 
+  function setCatFilter(catId: string) {
+    currentCat = catId;
+    document.querySelectorAll<HTMLButtonElement>('[data-cat]').forEach(b => {
+      b.classList.toggle('btn-primary', b.dataset.cat === catId);
+      b.classList.toggle('btn-ghost',   b.dataset.cat !== catId);
+    });
+    renderProduits();
+  }
+
+  q('filterAll').addEventListener('click', () => setCatFilter(''));
+
+  // ── Grille produits ───────────────────────────
   function renderProduits() {
-    const grid = document.getElementById('produitsGrid');
-    const filtered = currentFilter 
-      ? menuData.produits.filter(p => p.category === currentFilter)
-      : menuData.produits;
+    const grid  = q('produitsGrid');
+    const empty = q('emptyProducts');
+    const list  = currentCat
+      ? menu.produits.filter(p => p.category === currentCat)
+      : menu.produits;
 
-    grid.innerHTML = filtered.map(produit => {
-      const imageUrl = produit.images?.[0] 
-          ? api.images.getUrl(produit.images[0])
-          : '/placeholder.jpg';
+    grid.innerHTML = '';
+    if (!list.length) { empty.classList.remove('hidden'); return; }
+    empty.classList.add('hidden');
 
-      return `
-        <div class="card bg-base-100 shadow-lg ${!produit.disponible ? 'opacity-60' : ''}">
-          <figure class="h-48 bg-base-200">
-            <img src="${imageUrl}" alt="${produit.nom}" class="w-full h-full object-cover" />
-          </figure>
-          <div class="card-body p-4">
-            <div class="flex justify-between items-start">
-              <h3 class="card-title text-base">${produit.nom}</h3>
-              ${produit.popular ? '<span class="badge badge-primary badge-sm">★</span>' : ''}
-            </div>
-            <p class="text-sm text-base-content/60 line-clamp-2">${produit.description || ''}</p>
-            <div class="flex justify-between items-center mt-2">
-              <span class="text-lg font-bold">${formatPrice(produit.prix)}</span>
-              <span class="badge badge-sm ${produit.disponible ? 'badge-success' : 'badge-error'}">
-                ${produit.disponible ? 'En stock' : 'Rupture'}
-              </span>
-            </div>
-            <div class="card-actions justify-end mt-2">
-              <button class="btn btn-xs btn-ghost toggle-stock-btn" data-id="${produit.id}" data-disponible="${produit.disponible}">
-                ${produit.disponible ? '✓' : '✗'}
-              </button>
-              <button class="btn btn-xs btn-ghost edit-product-btn" data-id="${produit.id}">✏️</button>
-              <button class="btn btn-xs btn-ghost delete-product-btn" data-id="${produit.id}">🗑️</button>
-            </div>
+    list.forEach(p => {
+      const imgUrl = p.images?.[0]
+        ? `${getApiBase()}/images/${p.images[0]}`
+        : '/placeholder.jpg';
+
+      const card = document.createElement('div');
+      card.className = `card bg-base-100 shadow-lg transition-opacity ${p.disponible ? '' : 'opacity-60'}`;
+      card.innerHTML = `
+        <figure class="relative h-44 bg-base-200 overflow-hidden">
+          <img src="${esc(imgUrl)}" alt="${esc(p.nom)}" class="w-full h-full object-cover"
+            onerror="this.src='/placeholder.jpg'" loading="lazy" />
+          ${p.popular ? '<span class="absolute top-2 left-2 badge badge-primary badge-sm">★ Populaire</span>' : ''}
+        </figure>
+        <div class="card-body p-4 gap-1">
+          <h3 class="font-bold text-base leading-snug">${esc(p.nom)}</h3>
+          ${p.description ? `<p class="text-xs text-base-content/60 line-clamp-2">${esc(p.description)}</p>` : ''}
+          <div class="flex justify-between items-center mt-2">
+            <span class="font-bold text-primary tabular-nums">${fmt(p.prix)}</span>
+            <span class="badge badge-sm ${p.disponible ? 'badge-success' : 'badge-error'}">
+              ${p.disponible ? 'Dispo' : 'Épuisé'}
+            </span>
+          </div>
+          <div class="flex gap-1 justify-end mt-2">
+            <button class="btn btn-xs btn-ghost toggle-btn" data-id="${esc(p.id)}"
+              data-dispo="${p.disponible}" aria-label="Toggle disponibilité">
+              ${p.disponible ? '✓' : '✗'}
+            </button>
+            <button class="btn btn-xs btn-ghost edit-btn" data-id="${esc(p.id)}" aria-label="Modifier">✏️</button>
+            <button class="btn btn-xs btn-ghost text-error del-btn" data-id="${esc(p.id)}"
+              data-nom="${esc(p.nom)}" aria-label="Supprimer">🗑️</button>
           </div>
         </div>
       `;
-    }).join('');
-
-    attachProductActions();
-  }
-
-  function attachProductActions() {
-    document.querySelectorAll('.toggle-stock-btn').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const id = btn.dataset.id;
-        const disponible = btn.dataset.disponible === 'true';
-        await updateProduct(id, { disponible: !disponible });
-      });
+      grid.appendChild(card);
     });
 
-    document.querySelectorAll('.edit-product-btn').forEach(btn => {
+    // Listeners
+    grid.querySelectorAll<HTMLButtonElement>('.toggle-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const dispo = btn.dataset.dispo === 'true';
+        await updateProduct(btn.dataset.id!, { disponible: !dispo });
+      });
+    });
+    grid.querySelectorAll<HTMLButtonElement>('.edit-btn').forEach(btn => {
+      btn.addEventListener('click', () => openEditProduct(btn.dataset.id!));
+    });
+    grid.querySelectorAll<HTMLButtonElement>('.del-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        const id = btn.dataset.id;
-        openEditProduct(id);
-      });
-    });
-
-    document.querySelectorAll('.delete-product-btn').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const id = btn.dataset.id;
-        if (confirm('Supprimer ce produit ?')) {
-          await deleteProduct(id);
-        }
+        confirmDel(`Supprimer « ${btn.dataset.nom} » ?`, async () => {
+          await deleteProduct(btn.dataset.id!);
+        });
       });
     });
   }
 
-  function openEditProduct(id) {
-    editingProductId = id;
-    const produit = menuData.produits.find(p => p.id === id);
-    
-    document.getElementById('modalTitle').textContent = 'Modifier le produit';
-    document.getElementById('produitNom').value = produit.nom;
-    document.getElementById('produitDescription').value = produit.description || '';
-    document.getElementById('produitPrix').value = produit.prix;
-    document.getElementById('produitCategory').value = produit.category;
-    document.getElementById('produitRemovable').value = produit.removable_ingredients?.join(', ') || '';
-    document.getElementById('produitAllergenes').value = produit.allergenes?.join(', ') || '';
-    document.getElementById('produitPopular').checked = produit.popular || false;
-    document.getElementById('produitDisponible').checked = produit.disponible;
-
-    renderSupplementsCheckboxes();
-    (produit.supplements || []).forEach(suppId => {
-      const checkbox = document.querySelector(`input[name="supplement"][value="${suppId}"]`);
-      if (checkbox) checkbox.checked = true;
-    });
-
-    addProductModal.showModal();
-  }
-
-  function renderSupplementsCheckboxes() {
-    const container = document.getElementById('supplementsCheckboxes');
-    container.innerHTML = menuData.supplements.map(supp => `
-      <label class="label cursor-pointer gap-2 border rounded p-2">
-        <input type="checkbox" name="supplement" value="${supp.id}" class="checkbox checkbox-sm" />
-        <span class="label-text">${supp.name}</span>
-      </label>
-    `).join('');
-  }
-
-  function populateCategorySelect() {
-    const select = document.getElementById('produitCategory');
-    select.innerHTML = menuData.categories.map(cat => 
-      `<option value="${cat.id}">${cat.name}</option>`
+  // ── Modal produit ─────────────────────────────
+  function populateCatSelect() {
+    const sel = q<HTMLSelectElement>('prodCat');
+    sel.innerHTML = menu.categories.map(c =>
+      `<option value="${esc(c.id)}">${esc(c.icon)} ${esc(c.name)}</option>`
     ).join('');
   }
 
+  function renderSuppCheckboxes(checked: string[] = []) {
+    const wrap = q('suppCheckboxes');
+    wrap.innerHTML = '';
+    menu.supplements.forEach(s => {
+      const lbl = document.createElement('label');
+      lbl.className = 'flex items-center gap-1.5 border border-base-300 rounded-lg px-3 py-1.5 cursor-pointer text-sm';
+      const cb = document.createElement('input');
+      cb.type      = 'checkbox';
+      cb.name      = 'supplement';
+      cb.value     = s.id;
+      cb.className = 'checkbox checkbox-sm';
+      cb.checked   = checked.includes(s.id);
+      const span = document.createElement('span');
+      span.textContent = `${s.name} (+${fmt(s.price)})`;
+      lbl.appendChild(cb);
+      lbl.appendChild(span);
+      wrap.appendChild(lbl);
+    });
+  }
+
+  function resetProductModal() {
+    editId = null;
+    q('productModalTitle').textContent = 'Ajouter un produit';
+    (q<HTMLInputElement>('prodNom')).value        = '';
+    (q<HTMLTextAreaElement>('prodDesc')).value    = '';
+    (q<HTMLInputElement>('prodPrix')).value       = '';
+    (q<HTMLInputElement>('prodRemovable')).value  = '';
+    (q<HTMLInputElement>('prodAllergenes')).value = '';
+    (q<HTMLInputElement>('prodPopular')).checked  = false;
+    (q<HTMLInputElement>('prodDisponible')).checked = true;
+    (q<HTMLInputElement>('prodImages')).value     = '';
+    q('imagePreview').innerHTML                   = '';
+    renderSuppCheckboxes();
+  }
+
+  function openEditProduct(id: string) {
+    const p = menu.produits.find(x => x.id === id);
+    if (!p) return;
+    editId = id;
+    q('productModalTitle').textContent = 'Modifier le produit';
+    (q<HTMLInputElement>('prodNom')).value        = p.nom;
+    (q<HTMLTextAreaElement>('prodDesc')).value    = p.description ?? '';
+    (q<HTMLInputElement>('prodPrix')).value       = String(p.prix);
+    (q<HTMLSelectElement>('prodCat')).value       = p.category ?? '';
+    (q<HTMLInputElement>('prodRemovable')).value  = (p.removable_ingredients ?? []).join(', ');
+    (q<HTMLInputElement>('prodAllergenes')).value = (p.allergenes ?? []).join(', ');
+    (q<HTMLInputElement>('prodPopular')).checked  = p.popular ?? false;
+    (q<HTMLInputElement>('prodDisponible')).checked = p.disponible;
+
+    // Images existantes
+    const preview = q('imagePreview');
+    preview.innerHTML = '';
+    (p.images ?? []).forEach(src => {
+      const img = document.createElement('img');
+      img.src       = `${getApiBase()}/images/${src}`;
+      img.className = 'w-16 h-16 object-cover rounded-lg border border-base-300';
+      img.alt       = p.nom;
+      preview.appendChild(img);
+    });
+
+    renderSuppCheckboxes(p.supplements ?? []);
+    (q('productModal') as HTMLDialogElement).showModal();
+  }
+
+  // Preview nouvelles images
+  q<HTMLInputElement>('prodImages').addEventListener('change', (e) => {
+    const preview = q('imagePreview');
+    preview.innerHTML = '';
+    const files = (e.target as HTMLInputElement).files ?? [];
+    Array.from(files).forEach(f => {
+      const reader = new FileReader();
+      reader.onload = ev => {
+        const img = document.createElement('img');
+        img.src       = ev.target?.result as string;
+        img.className = 'w-16 h-16 object-cover rounded-lg border border-base-300';
+        preview.appendChild(img);
+      };
+      reader.readAsDataURL(f);
+    });
+  });
+
   async function saveProduct() {
-    const nom = document.getElementById('produitNom').value;
-    const description = document.getElementById('produitDescription').value;
-    const prix = parseFloat(document.getElementById('produitPrix').value);
-    const category = document.getElementById('produitCategory').value;
-    const removable = document.getElementById('produitRemovable').value
-      .split(',').map(s => s.trim()).filter(s => s);
-    const allergenes = document.getElementById('produitAllergenes').value
-      .split(',').map(s => s.trim()).filter(s => s);
-    const popular = document.getElementById('produitPopular').checked;
-    const disponible = document.getElementById('produitDisponible').checked;
+    const nom = (q<HTMLInputElement>('prodNom')).value.trim();
+    const prix = parseFloat((q<HTMLInputElement>('prodPrix')).value);
+    if (!nom) { showToast('Le nom est obligatoire', 'error'); return; }
+    if (isNaN(prix) || prix < 0) { showToast('Prix invalide', 'error'); return; }
 
-    const supplements = Array.from(document.querySelectorAll('input[name="supplement"]:checked'))
-      .map(cb => cb.value);
-
-    const images = [];
-    const fileInput = document.getElementById('produitImages');
-    
-    if (fileInput.files.length > 0) {
-      for (const file of fileInput.files) {
-        const uploadedImage = await uploadImage(file);
-        if (uploadedImage) images.push(uploadedImage);
-      }
-    }
-
-    const productData = {
-      nom,
-      description,
-      prix,
-      category,
-      images: images.length > 0 ? images : (editingProductId ? menuData.produits.find(p => p.id === editingProductId).images : []),
-      supplements,
-      removable_ingredients: removable,
-      allergenes,
-      popular,
-      disponible
-    };
+    const btn = q<HTMLButtonElement>('saveProductBtn');
+    btn.disabled = true;
+    btn.textContent = 'Enregistrement…';
 
     try {
-      if (editingProductId) {
-        await updateProduct(editingProductId, productData);
+      // Upload nouvelles images
+      const fileInput = q<HTMLInputElement>('prodImages');
+      const newImages: string[] = [];
+      for (const file of Array.from(fileInput.files ?? [])) {
+        const fd = new FormData();
+        fd.append('image', file);
+        const res = await fetch(`${getApiBase()}/upload-image`, {
+          method: 'POST', headers: authHNoJson(), body: fd,
+        });
+        if (res.ok) {
+          const data = await res.json() as { filename: string };
+          newImages.push(data.filename);
+        }
+      }
+
+      const existing = editId ? (menu.produits.find(p => p.id === editId)?.images ?? []) : [];
+      const supplements = Array.from(
+        document.querySelectorAll<HTMLInputElement>('input[name="supplement"]:checked')
+      ).map(cb => cb.value);
+
+      const payload: Partial<Produit> = {
+        nom,
+        description: (q<HTMLTextAreaElement>('prodDesc')).value,
+        prix,
+        category:   (q<HTMLSelectElement>('prodCat')).value,
+        images:     newImages.length ? newImages : existing,
+        supplements,
+        removable_ingredients: (q<HTMLInputElement>('prodRemovable')).value
+          .split(',').map(s => s.trim()).filter(Boolean),
+        allergenes: (q<HTMLInputElement>('prodAllergenes')).value
+          .split(',').map(s => s.trim()).filter(Boolean),
+        popular:    (q<HTMLInputElement>('prodPopular')).checked,
+        disponible: (q<HTMLInputElement>('prodDisponible')).checked,
+      };
+
+      if (editId) {
+        await apiFetch(`/menu/${encodeURIComponent(editId)}`, {
+          method: 'PUT', headers: authH(), body: JSON.stringify(payload),
+        });
+        showToast('Produit mis à jour', 'success');
       } else {
-        await api.menu.addProduct(productData);
+        await apiFetch('/menu', {
+          method: 'POST', headers: authH(), body: JSON.stringify(payload),
+        });
+        showToast('Produit ajouté', 'success');
       }
-      
-      addProductModal.close();
-      resetProductForm();
+
+      (q('productModal') as HTMLDialogElement).close();
+      resetProductModal();
       await loadMenu();
-    } catch (error) {
-      console.error('Erreur sauvegarde:', error);
-      alert('Erreur lors de la sauvegarde');
+    } catch (err: unknown) {
+      showToast(`Erreur : ${err instanceof Error ? err.message : String(err)}`, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Enregistrer';
     }
   }
 
-  async function uploadImage(file) {
-    const formData = new FormData();
-    formData.append('image', file);
-
+  async function updateProduct(id: string, data: Partial<Produit>) {
     try {
-      const data = await api.images.upload(file);
-      return data.filename;
-    } catch (error) {
-      console.error('Erreur upload:', error);
-      return null;
-    }
-  }
-
-  async function updateProduct(id, data) {
-    try {
-      await api.menu.updateProduct(id, data);
+      await apiFetch(`/menu/${encodeURIComponent(id)}`, {
+        method: 'PUT', headers: authH(), body: JSON.stringify(data),
+      });
       await loadMenu();
-    } catch (error) {
-      console.error('Erreur mise à jour:', error);
+    } catch (err: unknown) {
+      showToast(`Erreur : ${err instanceof Error ? err.message : String(err)}`, 'error');
     }
   }
 
-  async function deleteProduct(id) {
+  async function deleteProduct(id: string) {
     try {
-      await api.menu.deleteProduct(id);
+      await apiFetch(`/menu/${encodeURIComponent(id)}`, {
+        method: 'DELETE', headers: authH(),
+      });
+      showToast('Produit supprimé', 'success');
       await loadMenu();
-    } catch (error) {
-      console.error('Erreur suppression:', error);
+    } catch (err: unknown) {
+      showToast(`Erreur : ${err instanceof Error ? err.message : String(err)}`, 'error');
     }
   }
 
-  function resetProductForm() {
-    editingProductId = null;
-    document.getElementById('modalTitle').textContent = 'Ajouter un produit';
-    document.getElementById('produitNom').value = '';
-    document.getElementById('produitDescription').value = '';
-    document.getElementById('produitPrix').value = '';
-    document.getElementById('produitRemovable').value = '';
-    document.getElementById('produitAllergenes').value = '';
-    document.getElementById('produitPopular').checked = false;
-    document.getElementById('produitDisponible').checked = true;
-    document.getElementById('produitImages').value = '';
-    document.getElementById('imagePreview').innerHTML = '';
-    document.querySelectorAll('input[name="supplement"]').forEach(cb => cb.checked = false);
+  // ── Catégories ────────────────────────────────
+  function renderCatsManage() {
+    const wrap = q('catsManageList');
+    wrap.innerHTML = '';
+    menu.categories.forEach(cat => {
+      const row = document.createElement('div');
+      row.className = 'flex items-center gap-2 p-2 bg-base-100 rounded-xl border border-base-300';
+
+      const iconInp = document.createElement('input');
+      iconInp.type      = 'text';
+      iconInp.value     = cat.icon;
+      iconInp.className = 'input input-sm w-14 text-center';
+      iconInp.addEventListener('change', () => updateCat(cat.id, 'icon', iconInp.value));
+
+      const nameInp = document.createElement('input');
+      nameInp.type      = 'text';
+      nameInp.value     = cat.name;
+      nameInp.className = 'input input-sm flex-1';
+      nameInp.addEventListener('change', () => updateCat(cat.id, 'name', nameInp.value));
+
+      const delBtn = document.createElement('button');
+      delBtn.className   = 'btn btn-xs btn-ghost text-error';
+      delBtn.textContent = '🗑️';
+      delBtn.addEventListener('click', () => {
+        confirmDel(`Supprimer la catégorie « ${cat.name } » ?`, async () => {
+          menu.categories = menu.categories.filter(c => c.id !== cat.id);
+          await saveMenuMeta();
+          renderCatsManage();
+          renderCatFilters();
+          populateCatSelect();
+          renderProduits();
+        });
+      });
+
+      row.appendChild(iconInp);
+      row.appendChild(nameInp);
+      row.appendChild(delBtn);
+      wrap.appendChild(row);
+    });
   }
 
-  function renderCategories() {
-    const container = document.getElementById('categoriesList');
-    container.innerHTML = menuData.categories.map(cat => `
-      <div class="card bg-base-100 shadow">
-        <div class="card-body p-4">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-3">
-              <span class="text-3xl">${cat.icon}</span>
-              <span class="font-bold">${cat.name}</span>
-            </div>
-            <button class="btn btn-ghost btn-sm delete-category-btn" data-id="${cat.id}">🗑️</button>
-          </div>
-        </div>
-      </div>
-    `).join('');
+  async function updateCat(id: string, field: 'icon'|'name', value: string) {
+    const cat = menu.categories.find(c => c.id === id);
+    if (!cat) return;
+    cat[field] = value;
+    await saveMenuMeta();
+    renderCatFilters();
+    populateCatSelect();
   }
 
-  function renderSupplements() {
-    const container = document.getElementById('supplementsList');
-    container.innerHTML = menuData.supplements.map(supp => `
-      <div class="flex items-center justify-between p-4 bg-base-100 rounded shadow">
-        <div>
-          <span class="font-bold">${supp.name}</span>
-          <span class="text-sm text-base-content/60 ml-2">${formatPrice(supp.price)}</span>
-        </div>
-        <button class="btn btn-ghost btn-sm delete-supplement-btn" data-id="${supp.id}">🗑️</button>
-      </div>
-    `).join('');
-  }
-
-  document.getElementById('saveProductBtn').addEventListener('click', saveProduct);
-
-  // Gestion catégories
-  function renderCategoriesManage() {
-    const container = document.getElementById('categoriesManageList');
-    container.innerHTML = menuData.categories.map((cat, index) => `
-      <div class="card bg-base-100 shadow p-3">
-        <div class="flex items-center gap-3">
-          <input type="text" value="${cat.icon}" class="input input-sm w-16 text-center" 
-            onchange="updateCategory('${cat.id}', 'icon', this.value)" />
-          <input type="text" value="${cat.name}" class="input input-sm flex-1" 
-            onchange="updateCategory('${cat.id}', 'name', this.value)" />
-          <button class="btn btn-sm btn-ghost" onclick="deleteCategory('${cat.id}')">🗑️</button>
-        </div>
-      </div>
-    `).join('');
-  }
-
-  async function addCategory() {
-    const name = document.getElementById('newCategoryName').value.trim();
-    const icon = document.getElementById('newCategoryIcon').value.trim();
-    
-    if (!name || !icon) {
-      alert('Veuillez remplir tous les champs');
-      return;
-    }
-
-    const newCategory = {
-      id: name.toLowerCase().replace(/\s+/g, '_'),
-      name,
-      icon
-    };
-
-    menuData.categories.push(newCategory);
-    await saveMenuData();
-    
-    document.getElementById('newCategoryName').value = '';
-    document.getElementById('newCategoryIcon').value = '';
-    
-    renderCategoriesManage();
-    renderCategoryFilters();
-    populateCategorySelect();
-  }
-
-  window.updateCategory = async function(id, field, value) {
-    const category = menuData.categories.find(c => c.id === id);
-    if (category) {
-      category[field] = value;
-      await saveMenuData();
-      renderCategoryFilters();
-      populateCategorySelect();
-    }
-  };
-
-  window.deleteCategory = async function(id) {
-    if (!confirm('Supprimer cette catégorie ?')) return;
-    
-    menuData.categories = menuData.categories.filter(c => c.id !== id);
-    await saveMenuData();
-    
-    renderCategoriesManage();
-    renderCategoryFilters();
-    populateCategorySelect();
-    renderProduits();
-  };
-
-  // Gestion suppléments
-  function renderSupplementsManage() {
-    const container = document.getElementById('supplementsManageList');
-    container.innerHTML = menuData.supplements.map(supp => `
-      <div class="card bg-base-100 shadow p-3">
-        <div class="flex items-center gap-3">
-          <input type="text" value="${supp.name}" class="input input-sm flex-1" 
-            onchange="updateSupplement('${supp.id}', 'name', this.value)" />
-          <input type="number" step="0.01" value="${supp.price}" class="input input-sm w-32" 
-            onchange="updateSupplement('${supp.id}', 'price', parseFloat(this.value))" />
-          <button class="btn btn-sm btn-ghost" onclick="deleteSupplement('${supp.id}')">🗑️</button>
-        </div>
-      </div>
-    `).join('');
-  }
-
-  async function addSupplement() {
-    const name = document.getElementById('newSupplementName').value.trim();
-    const price = parseFloat(document.getElementById('newSupplementPrice').value);
-    
-    if (!name || isNaN(price)) {
-      alert('Veuillez remplir tous les champs');
-      return;
-    }
-
-    const newSupplement = {
-      id: name.toLowerCase().replace(/\s+/g, '_'),
-      name,
-      price
-    };
-
-    menuData.supplements.push(newSupplement);
-    await saveMenuData();
-    
-    document.getElementById('newSupplementName').value = '';
-    document.getElementById('newSupplementPrice').value = '';
-    
-    renderSupplementsManage();
-    renderSupplementsCheckboxes();
-  }
-
-  window.updateSupplement = async function(id, field, value) {
-    const supplement = menuData.supplements.find(s => s.id === id);
-    if (supplement) {
-      supplement[field] = value;
-      await saveMenuData();
-      renderSupplementsCheckboxes();
-    }
-  };
-
-  window.deleteSupplement = async function(id) {
-    if (!confirm('Supprimer ce supplément ?')) return;
-    
-    menuData.supplements = menuData.supplements.filter(s => s.id !== id);
-    await saveMenuData();
-    
-    renderSupplementsManage();
-    renderSupplementsCheckboxes();
-  };
-
-  async function saveMenuData() {
-    try {
-      await api.config.update({ menu: menuData });
-    } catch (error) {
-      console.error('Erreur sauvegarde menu:', error);
-      alert('Erreur lors de la sauvegarde');
-    }
-  }
-
-  document.getElementById('addCategoryBtn').addEventListener('click', addCategory);
-  document.getElementById('addSupplementBtn').addEventListener('click', addSupplement);
-
-  window.openManageCategoriesModal = function() {
-    console.log('Categories:', menuData.categories); // Debug
-    renderCategoriesManage();
-    manageCategoriesModal.showModal();
-  };
-
-  window.openManageSupplementsModal = function() {
-    console.log('Supplements:', menuData.supplements); // Debug
-    renderSupplementsManage();
-    manageSupplementsModal.showModal();
-  };
-
-  // S'assurer que les fonctions de render existent avant le chargement
-  window.renderCategoriesManage = renderCategoriesManage;
-  window.renderSupplementsManage = renderSupplementsManage;
-
-  window.addEventListener('click', (e) => {
-    if (e.target === addProductModal) {
-      resetProductForm();
-    }
+  q('addCatBtn').addEventListener('click', async () => {
+    const name = (q<HTMLInputElement>('newCatName')).value.trim();
+    const icon = (q<HTMLInputElement>('newCatIcon')).value.trim();
+    if (!name || !icon) { showToast('Nom et icône obligatoires', 'error'); return; }
+    menu.categories.push({ id: name.toLowerCase().replace(/\s+/g, '_'), name, icon });
+    await saveMenuMeta();
+    (q<HTMLInputElement>('newCatName')).value = '';
+    (q<HTMLInputElement>('newCatIcon')).value = '';
+    renderCatsManage();
+    renderCatFilters();
+    populateCatSelect();
+    showToast('Catégorie ajoutée', 'success');
   });
 
-  addProductModal.addEventListener('close', resetProductForm);
+  // ── Suppléments ───────────────────────────────
+  function renderSuppsManage() {
+    const wrap = q('suppsManageList');
+    wrap.innerHTML = '';
+    menu.supplements.forEach(s => {
+      const row = document.createElement('div');
+      row.className = 'flex items-center gap-2 p-2 bg-base-100 rounded-xl border border-base-300';
 
-  loadMenu().then(() => {
-    populateCategorySelect();
-    renderSupplementsCheckboxes();
+      const nameInp = document.createElement('input');
+      nameInp.type      = 'text';
+      nameInp.value     = s.name;
+      nameInp.className = 'input input-sm flex-1';
+      nameInp.addEventListener('change', () => updateSupp(s.id, 'name', nameInp.value));
+
+      const priceInp = document.createElement('input');
+      priceInp.type      = 'number';
+      priceInp.step      = '0.01';
+      priceInp.value     = String(s.price);
+      priceInp.className = 'input input-sm w-28';
+      priceInp.addEventListener('change', () => updateSupp(s.id, 'price', parseFloat(priceInp.value)));
+
+      const delBtn = document.createElement('button');
+      delBtn.className   = 'btn btn-xs btn-ghost text-error';
+      delBtn.textContent = '🗑️';
+      delBtn.addEventListener('click', () => {
+        confirmDel(`Supprimer le supplément « ${s.name} » ?`, async () => {
+          menu.supplements = menu.supplements.filter(x => x.id !== s.id);
+          await saveMenuMeta();
+          renderSuppsManage();
+          renderSuppCheckboxes();
+        });
+      });
+
+      row.appendChild(nameInp);
+      row.appendChild(priceInp);
+      row.appendChild(delBtn);
+      wrap.appendChild(row);
+    });
+  }
+
+  async function updateSupp(id: string, field: 'name'|'price', value: string|number) {
+    const s = menu.supplements.find(x => x.id === id);
+    if (!s) return;
+    (s as any)[field] = value;
+    await saveMenuMeta();
+    renderSuppCheckboxes();
+  }
+
+  q('addSuppBtn').addEventListener('click', async () => {
+    const name  = (q<HTMLInputElement>('newSuppName')).value.trim();
+    const price = parseFloat((q<HTMLInputElement>('newSuppPrice')).value);
+    if (!name || isNaN(price)) { showToast('Nom et prix obligatoires', 'error'); return; }
+    menu.supplements.push({ id: name.toLowerCase().replace(/\s+/g,'_'), name, price });
+    await saveMenuMeta();
+    (q<HTMLInputElement>('newSuppName')).value  = '';
+    (q<HTMLInputElement>('newSuppPrice')).value = '';
+    renderSuppsManage();
+    renderSuppCheckboxes();
+    showToast('Supplément ajouté', 'success');
   });
+
+  // Sauvegarde catégories + suppléments via endpoint config
+  async function saveMenuMeta() {
+    // Le backend stocke categories et supplements dans MENU_FILE (menu.json)
+    // via PUT /api/menu — on envoie la structure complète pour ne pas écraser les produits
+    try {
+      await apiFetch('/menu', {
+        method: 'PUT',
+        headers: authH(),
+        body: JSON.stringify({
+          categories:  menu.categories,
+          supplements: menu.supplements,
+          produits:    menu.produits,
+        }),
+      });
+    } catch (err: unknown) {
+      showToast(`Erreur sauvegarde : ${err instanceof Error ? err.message : String(err)}`, 'error');
+    }
+  }
+
+  // ── Boutons header ────────────────────────────
+  q('btnAddProduct').addEventListener('click', () => {
+    resetProductModal();
+    (q('productModal') as HTMLDialogElement).showModal();
+  });
+
+  q('btnManageCats').addEventListener('click', () => {
+    renderCatsManage();
+    (q('catsModal') as HTMLDialogElement).showModal();
+  });
+
+  q('btnManageSupps').addEventListener('click', () => {
+    renderSuppsManage();
+    (q('suppsModal') as HTMLDialogElement).showModal();
+  });
+
+  // Boutons modal produit
+  q('saveProductBtn').addEventListener('click', () => void saveProduct());
+  q('cancelProductBtn').addEventListener('click', () => {
+    (q('productModal') as HTMLDialogElement).close();
+  });
+
+  // Reset form à la fermeture
+  (q('productModal') as HTMLDialogElement).addEventListener('close', resetProductModal);
+
+  // ── Init ──────────────────────────────────────
+  document.addEventListener('astro:page-load', () => void loadMenu());
+  void loadMenu();
 </script>

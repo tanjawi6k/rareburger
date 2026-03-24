@@ -1,386 +1,546 @@
 // src/lib/api.ts
 // ============================================
-// 🚀 CMDOLA API Client - Version Complète
+// CMDOLA API Client
 // ============================================
 
 // ============================================
-// 🎯 CONFIGURATION
+// TYPES
 // ============================================
-const API_BASE_URL = import.meta.env.PUBLIC_API_URL || 'https://api.rareburger.be/api';
+
+export interface Restaurant {
+  id: string;
+  nom: string;
+}
+
+export interface AuthResponse {
+  success: boolean;
+  token: string;
+  username: string;
+  name: string;
+  roles: string[];
+  restaurant: Restaurant;
+}
+
+export interface TokenPayload {
+  valid: boolean;
+  username?: string;
+  roles?: string[];
+  restaurant?: string;
+  error?: string;
+}
+
+export interface UserInfo {
+  username: string;
+  name: string;
+  roles: string[];
+  restaurant: string;
+}
+
+export interface Supplement {
+  id: string;
+  name: string;
+  price: number;
+}
+
+export interface ArticleCommande {
+  id: string;
+  nom: string;
+  prix: number;
+  quantite: number;
+  supplements?: Supplement[];
+  removed_ingredients?: string[];
+  instructions?: string;
+}
+
+export interface AdresseLivraison {
+  rue: string;
+  numero: string;
+  code_postal: string;
+  ville: string;
+}
+
+export interface Client {
+  nom: string;
+  prenom?: string;
+  telephone: string;
+  email?: string;
+  adresse?: AdresseLivraison;
+}
+
+export interface Paiement {
+  mode: 'comptoir' | 'reception' | 'en_ligne';
+  statut: 'en_attente' | 'en_attente_paiement' | 'paye' | 'echec';
+  stripe_session_id?: string;
+  paid_at?: string;
+}
+
+export type StatutCommande =
+  | 'nouvelle'
+  | 'en_preparation'
+  | 'prete'
+  | 'en_livraison'
+  | 'livree'
+  | 'terminee'
+  | 'annulee';
+
+export type TypeCommande = 'sur_place' | 'emporter' | 'livraison';
+
+export interface Commande {
+  id: string;
+  numero: string;
+  date_creation: string;
+  statut: StatutCommande;
+  type: TypeCommande;
+  client: Client;
+  articles: ArticleCommande[];
+  sous_total: number;
+  frais_livraison: number;
+  prix_total: number;
+  paiement: Paiement;
+  notes?: string;
+  numero_table?: string;
+  heure_souhaitee?: string;
+  temps_estime?: string;
+  updated_at?: string;
+  status_updated_at?: string;
+  status_updated_by?: string;
+}
+
+export interface CommandeInput {
+  client: Client;
+  type: TypeCommande;
+  articles: ArticleCommande[];
+  sous_total: number;
+  frais_livraison: number;
+  prix_total: number;
+  paiement: Pick<Paiement, 'mode'>;
+  notes?: string;
+  numero_table?: string;
+  heure_souhaitee?: string;
+}
+
+export interface CommandesResponse {
+  commandes: Commande[];
+  total: number;
+  page?: number;
+  per_page?: number;
+  pages?: number;
+}
+
+export interface Produit {
+  id: string;
+  nom: string;
+  description?: string;
+  prix: number;
+  categorie?: string;
+  image?: string;
+  disponible: boolean;
+  supplements?: Supplement[];
+  ingredients?: string[];
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface Categorie {
+  id: string;
+  name: string;
+  icon?: string;
+}
+
+export interface Menu {
+  categories: Categorie[];
+  supplements: Supplement[];
+  produits: Produit[];
+  updated_at?: string;
+}
+
+export interface Config {
+  restaurant_id: string;
+  nom: string;
+  description?: string;
+  adresse?: string;
+  telephone?: string;
+  email?: string;
+  horaires?: Record<string, string>;
+  theme?: {
+    couleur_primaire: string;
+    couleur_secondaire: string;
+    couleur_accent: string;
+  };
+  modes_service?: Record<string, boolean>;
+  zones_livraison?: Array<{ distance_km: number; frais: number; minimum: number }>;
+  methodes_paiement?: Record<string, boolean>;
+  reseaux_sociaux?: Record<string, string>;
+}
+
+export interface Stats {
+  today_orders: number;
+  pending_orders: number;
+  today_revenue: number;
+  total_orders: number;
+  average_order: number;
+  top_products: Array<{ nom: string; quantite: number }>;
+}
+
+export interface HealthStatus {
+  status: 'healthy' | 'degraded' | 'unhealthy' | 'error';
+  service: string;
+  timestamp: string;
+  uptime: { seconds: number; human: string };
+  checks: Record<string, any>;
+  warnings: string[];
+  errors: string[];
+  repairs: string[];
+  metrics?: Record<string, any>;
+}
+
+export interface ImageInfo {
+  filename: string;
+  url: string;
+  size: number;
+  created: number;
+}
+
+export interface StripeSession {
+  session_id: string;
+  url: string;
+}
+
+export interface PrintResult {
+  success: boolean;
+  message: string;
+  commande_numero: string;
+}
 
 // ============================================
-// Helper pour récupérer le token JWT
+// CONFIGURATION
 // ============================================
+
+const API_BASE_URL =
+  (import.meta as any).env?.PUBLIC_API_URL || 'http://127.0.0.1:5000/api';
+
+// ============================================
+// TOKEN — cookie en priorité, localStorage en fallback
+// ============================================
+
 function getAuthToken(): string | null {
   if (typeof document === 'undefined') return null;
-  
-  const cookies = document.cookie.split(';');
-  for (let cookie of cookies) {
+
+  // 1. Chercher dans les cookies
+  for (const cookie of document.cookie.split(';')) {
     const [name, value] = cookie.trim().split('=');
-    if (name === 'admin_token') {
-      return value;
-    }
+    if (name === 'admin_token') return decodeURIComponent(value);
   }
-  return null;
-}
 
-// ============================================
-// Helper pour les requêtes fetch
-// ============================================
-async function apiFetch<T>(url: string, options: RequestInit = {}): Promise<T> {
-  console.log('🔍 API Fetch:', url);
-  
+  // 2. Fallback localStorage
   try {
-    // Ajouter le token d'authentification si disponible
-    const token = getAuthToken();
-    const headers: HeadersInit = {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    };
-    
-    if (token && !headers['Authorization']) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-
-    const response = await fetch(url, {
-      ...options,
-      headers,
-    });
-
-    console.log('✅ Response:', response.status);
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({
-        error: `HTTP ${response.status}: ${response.statusText}`,
-      }));
-      throw new Error(error.error || error.message || 'Erreur API');
-    }
-
-    return await response.json();
-  } catch (error) {
-    console.error('❌ API Error:', {
-      message: error instanceof Error ? error.message : 'Unknown error',
-      url: url
-    });
-    throw error;
+    return localStorage.getItem('admin_token');
+  } catch {
+    return null;
   }
 }
 
 // ============================================
-// 🔐 AUTH - Authentification
+// FETCH DE BASE
 // ============================================
+
+async function apiFetch<T>(url: string, options: RequestInit = {}): Promise<T> {
+  const token = getAuthToken();
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(options.headers as Record<string, string>),
+  };
+
+  if (token && !headers['Authorization']) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(url, { ...options, headers });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'Erreur réseau';
+    console.error('❌ Réseau:', url, msg);
+    throw new Error(`Erreur réseau : ${msg}`);
+  }
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({
+      error: `HTTP ${response.status} ${response.statusText}`,
+    }));
+    const msg = body?.error || body?.message || `Erreur ${response.status}`;
+    console.error('❌ API:', response.status, url, msg);
+    throw new Error(msg);
+  }
+
+  return response.json() as Promise<T>;
+}
+
+// Fetch sans Content-Type (pour FormData)
+async function apiFetchForm<T>(url: string, options: RequestInit = {}): Promise<T> {
+  const token = getAuthToken();
+  const headers: Record<string, string> = {
+    ...(options.headers as Record<string, string>),
+  };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  let response: Response;
+  try {
+    response = await fetch(url, { ...options, headers });
+  } catch (e) {
+    throw new Error(`Erreur réseau : ${e instanceof Error ? e.message : e}`);
+  }
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
+    throw new Error(body?.error || `Erreur ${response.status}`);
+  }
+
+  return response.json() as Promise<T>;
+}
+
+// ============================================
+// 🔐 AUTH
+// ============================================
+
 export const auth = {
-  /**
-   * Connexion avec username/password
-   * Retourne le token JWT et les rôles
-   */
-  login: async (username: string, password: string) => {
-    return apiFetch<{
-      success: boolean;
-      token: string;
-      username: string;
-      name: string;
-      roles: string[];
-      restaurant: { id: string; nom: string };
-    }>(`${API_BASE_URL}/auth/login`, {
+  login: (username: string, password: string) =>
+    apiFetch<AuthResponse>(`${API_BASE_URL}/auth/login`, {
       method: 'POST',
       body: JSON.stringify({ username, password }),
-    });
-  },
+    }),
 
-  /**
-   * Vérifier si le token est valide
-   */
-  verify: async () => {
-    return apiFetch<{
-      valid: boolean;
-      username?: string;
-      roles?: string[];
-      restaurant?: string;
-    }>(`${API_BASE_URL}/auth/verify`);
-  },
+  verify: () =>
+    apiFetch<TokenPayload>(`${API_BASE_URL}/auth/verify`),
 
-  /**
-   * Récupérer les infos de l'utilisateur connecté
-   */
-  me: async () => {
-    return apiFetch<{
-      username: string;
-      roles: string[];
-      name: string;
-      restaurant: string;
-    }>(`${API_BASE_URL}/auth/me`);
-  },
+  me: () =>
+    apiFetch<UserInfo>(`${API_BASE_URL}/auth/me`),
 };
 
 // ============================================
-// ⚙️ CONFIG - Configuration
+// ⚙️ CONFIG
 // ============================================
-export const config = {
-  /**
-   * Récupérer la configuration du restaurant
-   */
-  get: async () => {
-    return apiFetch(`${API_BASE_URL}/config`);
-  },
 
-  /**
-   * Mettre à jour la configuration (admin uniquement)
-   */
-  update: async (data: any) => {
-    return apiFetch(`${API_BASE_URL}/config`, {
+export const config = {
+  get: () =>
+    apiFetch<Config>(`${API_BASE_URL}/config`),
+
+  update: (data: Partial<Config>) =>
+    apiFetch<{ success: boolean; updated_at: string }>(`${API_BASE_URL}/config`, {
       method: 'PUT',
       body: JSON.stringify(data),
-    });
-  },
+    }),
 };
 
 // ============================================
-// 🍽️ MENU - Gestion du menu
+// 🍽️ MENU
 // ============================================
-export const menu = {
-  get: async () => {
-    return apiFetch(`${API_BASE_URL}/menu`);
-  },
 
-  addProduct: async (product: any) => {
-    return apiFetch(`${API_BASE_URL}/menu`, {
+export const menu = {
+  get: () =>
+    apiFetch<Menu>(`${API_BASE_URL}/menu`),
+
+  addProduct: (product: Omit<Produit, 'id' | 'created_at' | 'updated_at'>) =>
+    apiFetch<Produit>(`${API_BASE_URL}/menu`, {
       method: 'POST',
       body: JSON.stringify(product),
-    });
-  },
+    }),
 
-  getProduct: async (productId: string) => {
-    return apiFetch(`${API_BASE_URL}/menu/${productId}`);
-  },
+  /** Remplace le menu complet (catégories + produits + suppléments) */
+  replaceAll: (menuData: Menu) =>
+    apiFetch<Menu>(`${API_BASE_URL}/menu`, {
+      method: 'PUT',
+      body: JSON.stringify(menuData),
+    }),
 
-  updateProduct: async (productId: string, data: any) => {
-    return apiFetch(`${API_BASE_URL}/menu/${productId}`, {
+  getProduct: (productId: string) =>
+    apiFetch<Produit>(`${API_BASE_URL}/menu/${productId}`),
+
+  updateProduct: (productId: string, data: Partial<Produit>) =>
+    apiFetch<Produit>(`${API_BASE_URL}/menu/${productId}`, {
       method: 'PUT',
       body: JSON.stringify(data),
-    });
-  },
+    }),
 
-  deleteProduct: async (productId: string) => {
-    return apiFetch(`${API_BASE_URL}/menu/${productId}`, {
+  deleteProduct: (productId: string) =>
+    apiFetch<{ success: boolean }>(`${API_BASE_URL}/menu/${productId}`, {
       method: 'DELETE',
-    });
-  },
+    }),
 };
 
 // ============================================
-// 📦 COMMANDES - Gestion des commandes
+// 📦 COMMANDES
 // ============================================
+
 export const commandes = {
-  /**
-   * Liste toutes les commandes (admin uniquement)
-   */
-  list: async () => {
-    return apiFetch(`${API_BASE_URL}/commandes`);
+  /** Liste paginée (admin/chef/caissier) */
+  list: (page = 1, perPage = 50) =>
+    apiFetch<CommandesResponse>(
+      `${API_BASE_URL}/commandes?page=${page}&per_page=${perPage}`
+    ),
+
+  /** Commandes actives — public, pour l'interface cuisine */
+  listActives: () =>
+    apiFetch<CommandesResponse>(`${API_BASE_URL}/commandes/actives`),
+
+  /** Commandes archivées (terminées/annulées) */
+  listArchives: (
+    period: 'today' | 'week' | 'month' | 'all' = 'all',
+    statut: 'terminee' | 'annulee' | 'all' = 'all'
+  ) => {
+    const params = new URLSearchParams({ period, statut });
+    return apiFetch<CommandesResponse>(
+      `${API_BASE_URL}/commandes/archives?${params}`
+    );
   },
 
-
-  /**
-  * Liste des commandes archivées (terminées ou annulées)
-  * Accessible aux admins et chefs avec filtres
-  */
-  listArchives: async (period?: 'today' | 'week' | 'month' | 'all', statut?: 'terminee' | 'annulee' | 'all') => {
-    const params = new URLSearchParams();
-    if (period) params.append('period', period);
-    if (statut) params.append('statut', statut);
-  
-    const query = params.toString() ? `?${params.toString()}` : '';
-  
-    return apiFetch<{
-      commandes: any[];
-      total: number;
-    }>(`${API_BASE_URL}/commandes/archives${query}`);
-  },
-
-
-  /**
-   * Liste des commandes actives (public - pour cuisine)
-   * Exclut terminées, annulées et paiements en attente
-   */
-  listActives: async () => {
-    return apiFetch<{
-      commandes: any[];
-      total: number;
-    }>(`${API_BASE_URL}/commandes/actives`);
-  },
-
-  /**
-   * Créer une nouvelle commande (public - depuis le site)
-   */
-  create: async (data: any) => {
-    return apiFetch(`${API_BASE_URL}/commandes`, {
+  /** Créer une commande — public */
+  create: (data: CommandeInput) =>
+    apiFetch<Commande>(`${API_BASE_URL}/commandes`, {
       method: 'POST',
       body: JSON.stringify(data),
-    });
-  },
+    }),
 
-  /**
-   * Récupérer une commande par son ID (admin uniquement)
-   */
-  get: async (commandeId: string) => {
-    return apiFetch(`${API_BASE_URL}/commandes/${commandeId}`);
-  },
+  /** Détail d'une commande (admin/chef/caissier) */
+  get: (commandeId: string) =>
+    apiFetch<Commande>(`${API_BASE_URL}/commandes/${commandeId}`),
 
-  /**
-   * Récupérer une commande publiquement (par ID)
-   */
-  getPublic: async (commandeId: string) => {
-    return apiFetch(`${API_BASE_URL}/commandes/public/${commandeId}`);
-  },
+  /** Récupération publique (pour la page confirmation client) */
+  getPublic: (commandeId: string) =>
+    apiFetch<Commande>(`${API_BASE_URL}/commandes/public/${commandeId}`),
 
-  /**
-   * Tracker une commande par son numéro (public)
-   */
-  track: async (numero: string) => {
-    return apiFetch(`${API_BASE_URL}/commandes/track/${numero}`);
-  },
+  /** Suivi public par numéro de commande */
+  track: (numero: string) =>
+    apiFetch<Partial<Commande>>(`${API_BASE_URL}/commandes/track/${numero}`),
 
-  /**
-   * Mettre à jour une commande (admin uniquement)
-   */
-  update: async (commandeId: string, data: any) => {
-    return apiFetch(`${API_BASE_URL}/commandes/${commandeId}`, {
+  /** Mise à jour libre (admin) */
+  update: (commandeId: string, data: Partial<Commande>) =>
+    apiFetch<Commande>(`${API_BASE_URL}/commandes/${commandeId}`, {
       method: 'PUT',
       body: JSON.stringify(data),
-    });
-  },
+    }),
 
-  /**
-   * Supprimer une commande (admin uniquement)
-   */
-  delete: async (commandeId: string) => {
-    return apiFetch(`${API_BASE_URL}/commandes/${commandeId}`, {
+  /** Suppression (admin) */
+  delete: (commandeId: string) =>
+    apiFetch<{ success: boolean }>(`${API_BASE_URL}/commandes/${commandeId}`, {
       method: 'DELETE',
-    });
-  },
+    }),
 
-  /**
-   * Changer le statut d'une commande (admin ou chef)
-   */
-  updateStatus: async (commandeId: string, statut: string) => {
-    return apiFetch(`${API_BASE_URL}/commandes/${commandeId}/status`, {
+  /** Changement de statut (admin/chef/caissier) */
+  updateStatus: (commandeId: string, statut: StatutCommande) =>
+    apiFetch<Commande>(`${API_BASE_URL}/commandes/${commandeId}/status`, {
       method: 'PUT',
       body: JSON.stringify({ statut }),
-    });
-  },
+    }),
 };
 
 // ============================================
-// 🖼️ IMAGES - Gestion des images
+// 🖼️ IMAGES
 // ============================================
+
 export const images = {
-  upload: async (file: File) => {
+  upload: (file: File) => {
     const formData = new FormData();
     formData.append('image', file);
-    
-    const token = getAuthToken();
-
-    const response = await fetch(`${API_BASE_URL}/upload-image`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-      },
-      body: formData,
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Erreur upload');
-    }
-
-    return response.json();
+    return apiFetchForm<{ success: boolean; filename: string; url: string; size: number }>(
+      `${API_BASE_URL}/upload-image`,
+      { method: 'POST', body: formData }
+    );
   },
 
-  delete: async (filename: string) => {
-    return apiFetch(`${API_BASE_URL}/delete-image/${filename}`, {
+  delete: (filename: string) =>
+    apiFetch<{ success: boolean }>(`${API_BASE_URL}/delete-image/${filename}`, {
       method: 'DELETE',
-    });
-  },
+    }),
 
-  list: async () => {
-    return apiFetch(`${API_BASE_URL}/images`);
-  },
+  list: () =>
+    apiFetch<{ images: ImageInfo[] }>(`${API_BASE_URL}/images`),
 
-  getUrl: (filename: string) => {
-    return `${API_BASE_URL}/images/${filename}`;
-  },
+  /** URL publique d'une image */
+  getUrl: (filename: string) =>
+    `${API_BASE_URL}/images/${filename}`,
 };
 
 // ============================================
-// 📊 STATS - Statistiques
+// 📊 STATS
 // ============================================
+
 export const stats = {
-  general: async () => {
-    return apiFetch(`${API_BASE_URL}/stats`);
-  },
+  general: () =>
+    apiFetch<Stats>(`${API_BASE_URL}/stats`),
 
-  getExportUrl: (period: 'today' | 'week' | 'month' | 'all') => {
+  /**
+   * Télécharge le CSV directement via un lien
+   * (ouvre dans un nouvel onglet ou déclenche le download)
+   */
+  downloadExport: (period: 'today' | 'week' | 'month' | 'all') => {
     const token = getAuthToken();
-    return `${API_BASE_URL}/export/${period}?token=${token}`;
+    if (!token) throw new Error('Non authentifié');
+
+    // Fetch avec header Auth puis déclenche le download
+    fetch(`${API_BASE_URL}/export/${period}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error(`Erreur ${res.status}`);
+        return res.blob();
+      })
+      .then((blob) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `commandes_${period}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+      })
+      .catch((e) => console.error('Export CSV:', e));
   },
 };
 
 // ============================================
-// 🏥 HEALTH - Vérification santé
+// 🏥 HEALTH
 // ============================================
+
 export const health = {
-  check: async () => {
-    return apiFetch(`${API_BASE_URL}/health`);
-  },
+  check: () =>
+    apiFetch<HealthStatus>(`${API_BASE_URL}/health`),
 
-  checkDeep: async () => {
-    return apiFetch(`${API_BASE_URL}/health?deep=true`);
-  },
+  checkDeep: () =>
+    apiFetch<HealthStatus>(`${API_BASE_URL}/health?deep=true`),
+
+  repair: () =>
+    apiFetch<HealthStatus>(`${API_BASE_URL}/health?deep=true&repair=true`),
 };
 
 // ============================================
-// 💳 STRIPE - Paiement en ligne
+// 💳 STRIPE
 // ============================================
+
 export const stripe = {
-  createCheckoutSession: async (orderId: string) => {
-    return apiFetch<{
-      session_id: string;
-      url: string;
-    }>(`${API_BASE_URL}/stripe/create-checkout-session`, {
+  createCheckoutSession: (orderId: string) =>
+    apiFetch<StripeSession>(`${API_BASE_URL}/stripe/create-checkout-session`, {
       method: 'POST',
       body: JSON.stringify({ order_id: orderId }),
-    });
-  },
+    }),
 };
 
-
-
-
 // ============================================
-// 🖨️ PRINT - Impression de tickets
+// 🖨️ PRINT
 // ============================================
+
 export const print = {
-  /**
-   * Imprimer un ticket de commande sur l'imprimante thermique
-   */
-  printTicket: async (commandeId: string) => {
-    return apiFetch<{
-      success: boolean;
-      message: string;
-      commande_numero: string;
-    }>(`${API_BASE_URL}/print-ticket`, {
+  printTicket: (commandeId: string) =>
+    apiFetch<PrintResult>(`${API_BASE_URL}/print-ticket`, {
       method: 'POST',
       body: JSON.stringify({ commande_id: commandeId }),
-    });
-  },
+    }),
 };
 
-
-
-
 // ============================================
-// 🎯 Export par défaut
+// Export
 // ============================================
+
 export const api = {
   auth,
   config,

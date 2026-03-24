@@ -3,780 +3,599 @@
 import Navbar from '../components/Navbar.astro';
 import CategorySelector from '../components/CategorySelector.astro';
 import ProductGrid from '../components/ProductGrid.astro';
+import ProductModal from '../components/ProductModal.astro';
 import api from '../lib/api';
-import "../assets/app.css";
-import { formatInTimeZone } from 'date-fns-tz';
+import '../assets/app.css';
 
-// Récupérer les suppléments et la config
-let supplements = [];
-let config: any = {};
-let isOpen = false; // ✅ Par défaut fermé en cas d'erreur
+// ─────────────────────────────────────────
+// Types locaux
+// ─────────────────────────────────────────
+interface Category {
+  id: string;
+  name: string;
+  icon?: string;
+}
+
+interface TimeSlot {
+  debut: string;
+  fin: string;
+}
+
+// ─────────────────────────────────────────
+// Thème SSR — cookie en priorité
+// ─────────────────────────────────────────
+const VALID_THEMES: readonly string[] = [
+  'light','dark','cupcake','bumblebee','emerald','corporate',
+  'synthwave','retro','cyberpunk','valentine','halloween','garden',
+  'forest','aqua','lofi','pastel','fantasy','wireframe','black',
+  'luxury','dracula','cmyk','autumn','business','acid','lemonade',
+  'night','coffee','winter','dim','nord','sunset',
+];
+
+const cookieTheme = Astro.cookies.get('theme')?.value;
+
+// ─────────────────────────────────────────
+// État initialisé avec types explicites
+// ─────────────────────────────────────────
+let supplements: Record<string, unknown>[] = [];
+let products: Record<string, unknown>[]    = [];
+let categories: Category[]                 = [];
+let restaurantConfig: Record<string, unknown> = {};
+let theme      = 'light';
+let logoUrl    = '/favicon.ico';
+let isOpen     = false;
 let nextOpening = '';
-let currentSchedule: any[] = [];
-let theme = 'light';
-let logoUrl = '/favicon.ico';
+let hasError   = false;
 
-try {
-  // ⚡ Charger menu ET config EN PARALLÈLE (au lieu de l'un après l'autre)
-  const [menu, config] = await Promise.all([
-    api.menu.get(),
-    api.config.get()
-  ]);
-  
-  // Extraire les suppléments et le thème
-  supplements = menu.supplements || [];
-  theme = config.theme?.daisy || 'light';
-  logoUrl = config.theme?.logo ? api.images.getUrl(config.theme.logo) : '/favicon.ico';
-  
-  // ✅ Gestion du fuseau horaire
-  const TIMEZONE = 'Europe/Brussels';
-  const now = new Date();
-  
-  const currentDay = formatInTimeZone(now, TIMEZONE, 'EEEE').toLowerCase();
-  const currentTime = formatInTimeZone(now, TIMEZONE, 'HH:mm');
-  
-  // Mapper les jours anglais vers français
-  const dayMap: Record<string, string> = {
-    'monday': 'lundi',
-    'tuesday': 'mardi', 
-    'wednesday': 'mercredi',
-    'thursday': 'jeudi',
-    'friday': 'vendredi',
-    'saturday': 'samedi',
-    'sunday': 'dimanche'
-  };
-  
-  const currentDayFr = dayMap[currentDay] || currentDay;
-  currentSchedule = config.horaires?.[currentDayFr] || [];
-  
-  console.log(`🕐 ${currentDayFr} ${currentTime} | Horaires:`, currentSchedule);
-  
-  // ✅ Fonction de comparaison d'heures
-  function timeToMinutes(time: string): number {
-    const [hours, minutes] = time.split(':').map(Number);
-    return hours * 60 + minutes;
-  }
-  
-  const currentMinutes = timeToMinutes(currentTime);
-  
-  // Vérifier si l'heure actuelle est dans une des plages
-  isOpen = currentSchedule.some((plage: any) => {
-    const debutMinutes = timeToMinutes(plage.debut);
-    const finMinutes = timeToMinutes(plage.fin);
-    
-    if (finMinutes < debutMinutes) {
-      return currentMinutes >= debutMinutes || currentMinutes <= finMinutes;
-    } else {
-      return currentMinutes >= debutMinutes && currentMinutes <= finMinutes;
-    }
+// ─────────────────────────────────────────
+// Helpers horaires (SSR)
+// ─────────────────────────────────────────
+function timeToMinutes(t: string): number {
+  const [h, m] = t.split(':').map(Number);
+  return h * 60 + m;
+}
+
+const DAY_NAMES_FR: readonly string[]         = ['dimanche','lundi','mardi','mercredi','jeudi','vendredi','samedi'];
+const DAY_NAMES_FR_DISPLAY: readonly string[] = ['Dimanche','Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi'];
+
+function computeOpenStatus(horaires: Record<string, TimeSlot[]>): { open: boolean; next: string } {
+  const now      = new Date();
+  const bruxDate = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Brussels' }));
+  const dayFr    = DAY_NAMES_FR[bruxDate.getDay()] ?? 'lundi';
+  const timeStr  = `${String(bruxDate.getHours()).padStart(2, '0')}:${String(bruxDate.getMinutes()).padStart(2, '0')}`;
+  const nowMin   = timeToMinutes(timeStr);
+  const schedule = horaires[dayFr] ?? [];
+
+  const open = schedule.some(({ debut, fin }) => {
+    const d = timeToMinutes(debut);
+    const f = timeToMinutes(fin);
+    return f < d ? nowMin >= d || nowMin <= f : nowMin >= d && nowMin <= f;
   });
-  
-  console.log(`✅ Restaurant ${isOpen ? 'OUVERT' : 'FERMÉ'}`);
-  
-  // Si fermé, trouver la prochaine ouverture
-  if (!isOpen && currentSchedule.length > 0) {
-    const nextSlot = currentSchedule.find((plage: any) => {
-      const debutMinutes = timeToMinutes(plage.debut);
-      return currentMinutes < debutMinutes;
-    });
-    
+
+  let next = '';
+  if (!open) {
+    const nextSlot = schedule.find(({ debut }) => timeToMinutes(debut) > nowMin);
     if (nextSlot) {
-      nextOpening = `Ouverture aujourd'hui à ${nextSlot.debut}`;
+      next = `Ouverture aujourd'hui à ${nextSlot.debut}`;
     } else {
-      // Chercher le lendemain
-      const dayNames = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
-      const tomorrowDate = new Date(now);
-      tomorrowDate.setDate(tomorrowDate.getDate() + 1);
-      const tomorrowIndex = parseInt(formatInTimeZone(tomorrowDate, TIMEZONE, 'i')) % 7;
-      const tomorrowDay = dayNames[tomorrowIndex];
-      const tomorrowSchedule = config.horaires?.[tomorrowDay] || [];
-      if (tomorrowSchedule.length > 0) {
-        const dayNamesFr = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
-        nextOpening = `Ouverture ${dayNamesFr[tomorrowIndex]} à ${tomorrowSchedule[0].debut}`;
+      for (let i = 1; i <= 6; i++) {
+        const d = new Date(bruxDate);
+        d.setDate(d.getDate() + i);
+        const idx      = d.getDay();
+        const daySlots = horaires[DAY_NAMES_FR[idx] ?? ''] ?? [];
+        if (daySlots.length > 0) {
+          next = `Ouverture ${DAY_NAMES_FR_DISPLAY[idx] ?? ''} à ${daySlots[0].debut}`;
+          break;
+        }
       }
     }
   }
-  
-} catch (error) {
-  console.error('❌ Erreur chargement:', error);
-  supplements = [];
-  // isOpen reste false par défaut
+
+  return { open, next };
 }
 
-const cartItems = 0;
-const cartTotal = 0;
+// ─────────────────────────────────────────
+// Chargement des données
+// ─────────────────────────────────────────
+try {
+  const [menuData, configData] = await Promise.all([
+    api.menu.get() as Promise<Record<string, unknown>>,
+    api.config.get() as Promise<Record<string, unknown>>,
+  ]);
+
+  supplements      = (menuData.supplements as Record<string, unknown>[]) ?? [];
+  products         = (menuData.produits    as Record<string, unknown>[]) ?? [];
+  categories       = (menuData.categories  as Category[])                ?? [];
+  restaurantConfig = configData;
+
+  const configTheme = (configData.theme as Record<string, string> | undefined)?.daisy;
+  theme = (cookieTheme && VALID_THEMES.includes(cookieTheme))
+    ? cookieTheme
+    : (configTheme && VALID_THEMES.includes(configTheme) ? configTheme : 'light');
+
+  const logoFilename = (configData.theme as Record<string, string> | undefined)?.logo;
+  logoUrl = logoFilename ? api.images.getUrl(logoFilename) : '/favicon.ico';
+
+  const horaires = (configData.horaires as Record<string, TimeSlot[]>) ?? {};
+  const { open, next } = computeOpenStatus(horaires);
+  isOpen      = open;
+  nextOpening = next;
+
+} catch (err: unknown) {
+  console.error('Erreur chargement menu/config:', err);
+  hasError = true;
+}
+
+const apiBaseUrl: string = import.meta.env.PUBLIC_API_URL ?? 'http://127.0.0.1:5000/api';
+const restaurantName: string = (restaurantConfig.nom as string | undefined) ?? 'CMDOLA';
+const restaurantTel: string  = (restaurantConfig.telephone as string | undefined) ?? '';
 ---
 
 <!DOCTYPE html>
 <html lang="fr" data-theme={theme}>
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="theme-color" content="#1f2937">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <title>Menu - CMDOLA</title>
-  <link rel="icon" type="image/png" href={logoUrl}>
-  
-  <!-- Charger les suppléments IMMÉDIATEMENT -->
-  <script is:inline define:vars={{ supplements }}>
-    if (typeof window !== 'undefined') {
-      window.allSupplements = supplements || [];
-    }
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#1f2937" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <!-- URL API exposée au client via meta — évite les globals window -->
+  <meta name="api-url" content={apiBaseUrl} />
+  <title>Menu — {restaurantName}</title>
+  <link rel="icon" type="image/png" href={logoUrl} />
+
+  <!--
+    Anti-FOUC thème : script is:inline exécuté avant le rendu CSS.
+    is:inline = pas de bundling Astro, pas de déduplication — intentionnel ici
+    car on a besoin qu'il soit en tête de page, avant tout style.
+  -->
+  <script is:inline>
+    (function () {
+      var valid = [
+        'light','dark','cupcake','bumblebee','emerald','corporate',
+        'synthwave','retro','cyberpunk','valentine','halloween','garden',
+        'forest','aqua','lofi','pastel','fantasy','wireframe','black',
+        'luxury','dracula','cmyk','autumn','business','acid','lemonade',
+        'night','coffee','winter','dim','nord','sunset',
+      ];
+      var cookie = document.cookie.split(';').find(function (c) {
+        return c.trim().startsWith('theme=');
+      });
+      var t = cookie ? decodeURIComponent(cookie.split('=')[1].trim()) : null;
+      if (t && valid.indexOf(t) !== -1) {
+        document.documentElement.setAttribute('data-theme', t);
+      }
+    }());
+  </script>
+
+  <!--
+    Suppléments en JSON brut via set:html — évite tout problème d'encodage
+    d'attribut HTML (apostrophes, guillemets dans les noms de suppléments).
+    Le second script is:inline lit et expose window.allSupplements.
+  -->
+  <script id="supplements-data" type="application/json" set:html={JSON.stringify(supplements)} />
+  <script is:inline>
+    (function () {
+      var el = document.getElementById('supplements-data');
+      try {
+        window.allSupplements = el ? JSON.parse(el.textContent || '[]') : [];
+      } catch (_) {
+        window.allSupplements = [];
+      }
+    }());
   </script>
 </head>
 
-<body class="bg-base-200 min-h-screen">
-
-<!-- 🚧 MODAL MAINTENANCE (visible par défaut) -->
-
-
-  <dialog class="modal modal-open backdrop-blur-sm">
-
-
-    <div class="modal-box max-w-md text-center">
-
-
-      <!-- Logo ou icône -->
-
-
-      <div class="mb-6">
-
-
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-20 w-20 mx-auto text-warning" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-
-
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-
-
-        </svg>
-
-
-      </div>
-
-
-      
-
-
-      <!-- Message -->
-
-
-      <h2 class="text-2xl font-bold mb-4">Plateforme en développement</h2>
-
-
-      <p class="text-base-content/70 mb-2">
-
-
-        Cette plateforme est actuellement en cours de développement.
-
-
-      </p>
-
-
-      <p class="text-base-content/70 mb-6">
-
-
-        Contacter nous directement par téléphone au <br>0470 18 42 42
-
-
-      </p>
-
-
-      
-
-
-      <!-- Badge développeur -->
-
-
-      <div class="badge badge-primary badge-lg gap-2">
-
-
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-
-
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-
-
-        </svg>
-
-
-        Développé par NSMobile
-
-
-      </div>
-
-
-      
-
-
-      <!-- Optionnel : lien de contact -->
-
-
-      <div class="mt-6">
-
-
-        <a href="tel:+32470184242" class="link link-primary text-sm">
-
-
-          Nous contacter
-
-
-        </a>
-
-
-      </div>
-
-
-    </div>
-
-
-    
-
-
-    <!-- Backdrop (arrière-plan) -->
-
-
-    <div class="modal-backdrop bg-black/60"></div>
-
-
-  </dialog>
-
-  <!-- Navigation avec support safe-area -->
-  <div class="navbar-wrapper">
-    <Navbar 
-      cartItems={cartItems}
-      cartTotal={cartTotal}
+<body class="bg-base-200" style="min-height: 100dvh; min-height: 100vh;">
+
+  <header class="sticky top-0 z-40" style="padding-top: env(safe-area-inset-top, 0px);">
+    <Navbar
+      restaurantName={restaurantName}
+      logoUrl={logoUrl}
+      activePage="menu"
     />
-  </div>
-  
-  <!-- Container principal avec padding adaptatif -->
+  </header>
+
   <main class="main-content">
-    
-    <!-- Alert si restaurant fermé -->
+
     {!isOpen && (
-      <div class="alert-container">
-        <div class="alert alert-warning shadow-lg" id="closed-alert">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 sm:h-6 sm:w-6 shrink-0 stroke-current" fill="none" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-          </svg>
-          <div class="alert-content">
-            <h3 class="font-bold text-sm sm:text-base">Restaurant actuellement fermé</h3>
-            <div class="text-xs sm:text-sm" id="next-opening-text">{nextOpening || 'Consultez nos horaires'}</div>
-          </div>
+      <div
+        class="alert alert-warning shadow-md mb-4 rounded-2xl"
+        role="alert"
+        id="closed-alert"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          class="h-5 w-5 shrink-0"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          aria-hidden="true"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+          />
+        </svg>
+        <div class="min-w-0">
+          <p class="font-bold text-sm sm:text-base">Restaurant actuellement fermé</p>
+          <p class="text-xs sm:text-sm opacity-80">{nextOpening || 'Consultez nos horaires'}</p>
         </div>
       </div>
     )}
-    
-    <!-- Sélecteur de catégories -->
-    <div class="category-wrapper">
-      <CategorySelector 
-        selectedCategory="all"
-      />
+
+    <div class="category-scroll">
+      <CategorySelector categories={categories} selectedCategory="all" />
     </div>
-    
-    <!-- Grille de produits -->
-    <div class="products-wrapper">
-      <ProductGrid 
-        category="all"
-        isOpen={isOpen}
-      />
-    </div>
-    
+
+    <ProductGrid
+      products={products}
+      category="all"
+      isOpen={isOpen}
+      apiBaseUrl={apiBaseUrl}
+      hasError={hasError}
+      telephone={restaurantTel}
+    />
+
   </main>
-  
-  <!-- Toast Container avec safe-area -->
-  <div id="toast-container" class="toast toast-top toast-end toast-safe"></div>
+
+  <!-- Modal partagé — une seule instance pour toutes les cartes produit -->
+  <ProductModal id="shared" />
+
+  <div
+    id="toast-container"
+    class="toast toast-top toast-end z-50"
+    aria-live="polite"
+    aria-atomic="false"
+  ></div>
 
 </body>
 </html>
 
 <style>
-  /* ============================================
-   * 🎨 RESPONSIVE & SAFE AREA
-   * ============================================ */
-  
-  :root {
-    /* Variables CSS pour les safe areas */
-    --sat: env(safe-area-inset-top);
-    --sar: env(safe-area-inset-right);
-    --sab: env(safe-area-inset-bottom);
-    --sal: env(safe-area-inset-left);
-  }
-
-  body {
-    animation: fadeIn 0.3s ease-in;
-    /* Éviter le bounce sur iOS */
-    overscroll-behavior-y: none;
-    /* Hauteur réelle de la fenêtre (compatible iOS) */
-    min-height: 100vh;
-    min-height: -webkit-fill-available;
-  }
-
-  html {
-    scroll-behavior: smooth;
-    /* Hauteur réelle de la fenêtre */
-    height: -webkit-fill-available;
-  }
-
-  @keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
-
-  /* ============================================
-   * 📱 NAVBAR avec Safe Area
-   * ============================================ */
-  
-  .navbar-wrapper {
-    position: sticky;
-    top: 0;
-    z-index: 40;
-    /* Support notch iPhone */
-    padding-top: var(--sat);
-    background: inherit;
-  }
-
-  /* ============================================
-   * 📦 CONTENEUR PRINCIPAL
-   * ============================================ */
-  
+  /* ── Safe areas ──────────────────────────────── */
   .main-content {
-    /* Espacement adaptatif pour mobile */
-    padding-left: max(1rem, var(--sal));
-    padding-right: max(1rem, var(--sar));
-    padding-bottom: max(2rem, var(--sab));
     padding-top: 1rem;
+    padding-bottom: max(2rem, env(safe-area-inset-bottom, 0px));
+    padding-inline: max(1rem, env(safe-area-inset-left, 0px));
   }
 
-  /* Sur très petits écrans */
   @media (max-width: 640px) {
     .main-content {
-      padding-left: max(0.75rem, var(--sal));
-      padding-right: max(0.75rem, var(--sar));
+      padding-inline: max(0.75rem, env(safe-area-inset-left, 0px));
       padding-top: 0.75rem;
     }
   }
 
-  /* ============================================
-   * 🚨 ALERT RESPONSIVE
-   * ============================================ */
-  
-  .alert-container {
-    margin-bottom: 1rem;
+  @media (max-width: 915px) and (orientation: landscape) {
+    .main-content { padding-top: 0.5rem; }
   }
 
-  .alert {
-    /* Meilleure lisibilité sur mobile */
-    padding: 0.75rem;
-    gap: 0.75rem;
-  }
-
-  .alert-content {
-    flex: 1;
-    min-width: 0; /* Permet au texte de se tronquer si nécessaire */
-  }
-
-  @media (max-width: 640px) {
-    .alert {
-      padding: 0.5rem;
-      gap: 0.5rem;
-      font-size: 0.875rem;
-    }
-    
-    .alert svg {
-      width: 1.25rem;
-      height: 1.25rem;
-    }
-  }
-
-  /* ============================================
-   * 🏷️ CATEGORIES RESPONSIVE
-   * ============================================ */
-  
-  .category-wrapper {
-    margin-bottom: 1rem;
-    /* Éviter le débordement horizontal */
+  /* ── Catégories scrollables ─────────────────── */
+  .category-scroll {
     overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    /* Cacher la scrollbar mais garder le scroll */
     scrollbar-width: none;
     -ms-overflow-style: none;
+    margin-bottom: 1rem;
+    /* Débord négatif pour toucher les bords sur mobile */
+    margin-inline: calc(-1 * max(1rem, env(safe-area-inset-left, 0px)));
+    padding-inline: max(1rem, env(safe-area-inset-left, 0px));
   }
+  .category-scroll::-webkit-scrollbar { display: none; }
 
-  .category-wrapper::-webkit-scrollbar {
-    display: none;
-  }
-
-  @media (max-width: 640px) {
-    .category-wrapper {
-      margin-left: -0.75rem;
-      margin-right: -0.75rem;
-      padding-left: 0.75rem;
-      padding-right: 0.75rem;
-    }
-  }
-
-  /* ============================================
-   * 🍽️ GRILLE PRODUITS RESPONSIVE
-   * ============================================ */
-  
-  .products-wrapper {
-    /* La grille est gérée par ProductGrid, on optimise juste le container */
-    width: 100%;
-  }
-
-  /* ============================================
-   * 🔔 TOAST avec Safe Area
-   * ============================================ */
-  
-  .toast-safe {
-    /* Positionner en tenant compte du notch */
-    top: calc(1rem + var(--sat)) !important;
-    right: max(1rem, var(--sar)) !important;
+  /* ── Toast ──────────────────────────────────── */
+  #toast-container {
+    top: calc(1rem + env(safe-area-inset-top, 0px)) !important;
+    right: max(1rem, env(safe-area-inset-right, 0px)) !important;
   }
 
   @media (max-width: 640px) {
-    .toast-safe {
-      /* Plus proche du bord sur mobile */
-      right: max(0.5rem, var(--sar)) !important;
-      top: calc(0.5rem + var(--sat)) !important;
-      /* Largeur adaptative */
-      max-width: calc(100vw - max(1rem, var(--sar)) - max(1rem, var(--sal)));
+    #toast-container {
+      top: calc(0.5rem + env(safe-area-inset-top, 0px)) !important;
+      right: max(0.5rem, env(safe-area-inset-right, 0px)) !important;
+      max-width: calc(100vw - 1rem);
     }
   }
 
-  /* ============================================
-   * 🎯 TOUCH TARGETS (Accessibilité mobile)
-   * ============================================ */
-  
-  /* Minimum 44x44px pour les zones tactiles (Apple HIG) */
-  @media (max-width: 640px) {
-    button, a, .btn {
-      min-height: 44px;
-      min-width: 44px;
-    }
-  }
-
-  /* ============================================
-   * 📐 ORIENTATION LANDSCAPE MOBILE
-   * ============================================ */
-  
-  @media (max-width: 915px) and (orientation: landscape) {
-    .main-content {
-      /* Réduire les marges en paysage */
-      padding-top: 0.5rem;
-      padding-bottom: 1rem;
-    }
-    
-    .alert-container {
-      margin-bottom: 0.5rem;
-    }
-  }
-
-  /* ============================================
-   * 🔧 FIX iOS Safari
-   * ============================================ */
-  
-  /* Éviter le zoom sur focus des inputs */
-  @media (max-width: 640px) {
-    input, select, textarea {
-      font-size: 16px !important;
-    }
-  }
-
-  /* Smooth scrolling pour iOS */
-  * {
+  /* ── Global ─────────────────────────────────── */
+  html  { scroll-behavior: smooth; }
+  body  {
+    overscroll-behavior-y: none;
     -webkit-tap-highlight-color: transparent;
+    animation: page-fade-in 0.2s ease-out;
+  }
+
+  @keyframes page-fade-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Prévenir le zoom auto sur input iOS (<= 640px) */
+  @media (max-width: 640px) {
+    input, select, textarea { font-size: 16px !important; }
+  }
+
+  /* Touch targets Apple HIG (44px minimum) */
+  @media (pointer: coarse) {
+    button, a { min-height: 44px; }
   }
 </style>
 
-<script define:vars={{ isOpen: isOpen, config }}>
-  // ============================================
-  // 🎯 Script intelligent - Sans rechargement intempestif
-  // ============================================
-  
-  let lastActivity = Date.now();
-  let modalIsOpen = false;
-  let pollingInterval = null;
-  
-  // Mise à jour du badge panier
-  function updateCartBadge() {
-    const cart = JSON.parse(localStorage.getItem('cart') || '[]');
-    const totalItems = cart.reduce((sum, item) => sum + item.quantite, 0);
-    const totalPrice = cart.reduce((sum, item) => sum + (item.prix * item.quantite), 0);
-    
-    const badge = document.querySelector('.indicator-item');
-    if (badge) {
-      badge.textContent = totalItems.toString();
-      badge.style.display = totalItems > 0 ? 'inline-flex' : 'none';
+<!--
+  Script client principal — bundlé par Astro (TypeScript natif, dédupliqué).
+  PAS de is:inline ici → Astro le traite comme un module ES TypeScript.
+-->
+<script>
+  // ── Types ─────────────────────────────────────
+  interface CartItem {
+    id: string;
+    quantite: number;
+    prix: number;
+  }
+
+  interface TimeSlot {
+    debut: string;
+    fin: string;
+  }
+
+  // ── Panier ────────────────────────────────────
+  function getCart(): CartItem[] {
+    try {
+      return JSON.parse(localStorage.getItem('cart') ?? '[]') as CartItem[];
+    } catch {
+      return [];
     }
-    
-    const itemsText = document.querySelector('.card-body .text-lg');
-    if (itemsText) {
-      itemsText.textContent = `${totalItems} Article${totalItems > 1 ? 's' : ''}`;
-    }
-    
-    const priceText = document.querySelector('.card-body .text-info');
-    if (priceText) {
-      const formatted = new Intl.NumberFormat('fr-BE', {
+  }
+
+  function updateCartUI(): void {
+    const cart  = getCart();
+    const total = cart.reduce((s, i) => s + i.quantite, 0);
+    const price = cart.reduce((s, i) => s + i.prix * i.quantite, 0);
+
+    document.querySelectorAll<HTMLElement>('[data-cart-count]').forEach(el => {
+      el.textContent = String(total);
+      el.style.display = total > 0 ? 'inline-flex' : 'none';
+    });
+
+    document.querySelectorAll<HTMLElement>('[data-cart-total]').forEach(el => {
+      el.textContent = new Intl.NumberFormat('fr-BE', {
         style: 'currency',
         currency: 'EUR',
-      }).format(totalPrice);
-      priceText.textContent = `Sous-total: ${formatted}`;
-    }
+      }).format(price);
+    });
   }
 
-  // ✅ NOUVEAU : Détecter si modal ouvert
-  function checkIfModalOpen() {
-    const openModals = document.querySelectorAll('dialog[open]');
-    modalIsOpen = openModals.length > 0;
-    return modalIsOpen;
+  // ── Helpers horaires (client) ─────────────────
+  function timeToMin(t: string): number {
+    const [h, m] = t.split(':').map(Number);
+    return (h ?? 0) * 60 + (m ?? 0);
   }
 
-  // ✅ NOUVEAU : Détecter si panier vide
-  function isCartEmpty() {
-    const cart = JSON.parse(localStorage.getItem('cart') || '[]');
-    return cart.length === 0;
+  function isOpenNow(horaires: Record<string, TimeSlot[]>): boolean {
+    const now  = new Date();
+    const brux = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Brussels' }));
+    const days: readonly string[] = ['dimanche','lundi','mardi','mercredi','jeudi','vendredi','samedi'];
+    const day  = days[brux.getDay()] ?? 'lundi';
+    const cur  = timeToMin(
+      `${String(brux.getHours()).padStart(2, '0')}:${String(brux.getMinutes()).padStart(2, '0')}`
+    );
+    return (horaires[day] ?? []).some(({ debut, fin }) => {
+      const d = timeToMin(debut);
+      const f = timeToMin(fin);
+      return f < d ? cur >= d || cur <= f : cur >= d && cur <= f;
+    });
   }
 
-  // ✅ NOUVEAU : Détecter inactivité (pas d'interaction depuis X secondes)
-  function isUserInactive() {
-    const inactiveThreshold = 30000; // 30 secondes
-    return (Date.now() - lastActivity) > inactiveThreshold;
+  // ── Utilitaire API URL ────────────────────────
+  function getApiBase(): string {
+    return document.querySelector<HTMLMetaElement>('meta[name="api-url"]')?.content
+      ?? 'http://127.0.0.1:5000/api';
   }
 
-  // ✅ NOUVEAU : Conditions de sécurité avant refresh
-  function canSafelyRefresh() {
-    return !checkIfModalOpen() && isCartEmpty() && isUserInactive();
+  // ── Toast (DOM, pas de innerHTML) ────────────
+  function showToast(
+    message: string,
+    type: 'info' | 'warning' | 'success' | 'error',
+    duration = 6000
+  ): HTMLElement | null {
+    const container = document.getElementById('toast-container');
+    if (!container) return null;
+
+    const el = document.createElement('div');
+    el.className = `alert alert-${type} shadow-lg mb-2 max-w-xs sm:max-w-sm`;
+    el.textContent = message;
+    container.appendChild(el);
+    setTimeout(() => el.remove(), duration);
+    return el;
   }
 
-  // ✅ NOUVEAU : Vérifier le statut SANS recharger
-  async function checkStatusInBackground() {
+  function showStatusToast(isNowOpen: boolean): HTMLElement | null {
+    const container = document.getElementById('toast-container');
+    if (!container) return null;
+
+    const el    = document.createElement('div');
+    el.className = `alert ${isNowOpen ? 'alert-success' : 'alert-warning'} shadow-lg mb-2 flex items-center gap-2`;
+
+    const text  = document.createElement('div');
+    text.className = 'flex-1';
+
+    const title = document.createElement('p');
+    title.className   = 'font-bold text-sm';
+    title.textContent = isNowOpen ? 'Restaurant ouvert !' : 'Restaurant fermé';
+
+    const sub   = document.createElement('p');
+    sub.className   = 'text-xs opacity-80';
+    sub.textContent = 'Le statut a changé';
+
+    const btn   = document.createElement('button');
+    btn.className   = 'btn btn-xs btn-primary ml-2';
+    btn.textContent = 'Actualiser';
+    btn.addEventListener('click', () => window.location.reload());
+
+    text.appendChild(title);
+    text.appendChild(sub);
+    el.appendChild(text);
+    el.appendChild(btn);
+    container.appendChild(el);
+
+    setTimeout(() => el.remove(), 30000);
+    return el;
+  }
+
+  // ── Polling statut ouverture ──────────────────
+  // Variables de module — réinitialisées à chaque init()
+  let lastKnownOpen: boolean | null = null;
+  let hasUpdateToast                = false;
+  let pollIntervals: ReturnType<typeof setInterval>[] = [];
+
+  async function pollOpenStatus(): Promise<void> {
     try {
-      const response = await fetch('/api/config');
-      const config = await response.json();
-      
-      const now = new Date();
-      const belgianTime = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Brussels' }));
-      
-      const dayNames = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
-      const currentDay = dayNames[belgianTime.getDay()];
-      const currentTime = `${String(belgianTime.getHours()).padStart(2, '0')}:${String(belgianTime.getMinutes()).padStart(2, '0')}`;
-      
-      const currentSchedule = config.horaires?.[currentDay] || [];
-      
-      function timeToMinutes(time) {
-        const [hours, minutes] = time.split(':').map(Number);
-        return hours * 60 + minutes;
-      }
-      
-      const currentMinutes = timeToMinutes(currentTime);
-      
-      const nowOpen = currentSchedule.some((plage) => {
-        const debutMinutes = timeToMinutes(plage.debut);
-        const finMinutes = timeToMinutes(plage.fin);
-        
-        if (finMinutes < debutMinutes) {
-          return currentMinutes >= debutMinutes || currentMinutes <= finMinutes;
-        } else {
-          return currentMinutes >= debutMinutes && currentMinutes <= finMinutes;
-        }
-      });
-      
-      // Si le statut a changé
-      if (nowOpen !== isOpen) {
-        console.log('🔄 Statut changé:', nowOpen ? 'OUVERT' : 'FERMÉ');
-        
-        // ✅ Si on PEUT recharger en sécurité
-        if (canSafelyRefresh()) {
-          console.log('✅ Rechargement sécurisé');
-          window.location.reload();
-        } else {
-          // ✅ Sinon, afficher un toast "Mise à jour disponible"
-          showUpdateToast(nowOpen);
-        }
-      }
-      
-    } catch (error) {
-      console.error('❌ Erreur vérification statut:', error);
-    }
-  }
+      const res = await fetch(`${getApiBase()}/config`);
+      if (!res.ok) return;
 
-  // ✅ NOUVEAU : Toast pour mise à jour disponible
-  function showUpdateToast(nowOpen) {
-    const toastContainer = document.getElementById('toast-container');
-    if (!toastContainer) return;
-    
-    // Éviter les doublons
-    if (document.getElementById('update-toast')) return;
-    
-    const toast = document.createElement('div');
-    toast.id = 'update-toast';
-    toast.className = 'alert alert-info shadow-lg mb-2';
-    toast.innerHTML = `
-      <div>
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
-        <div>
-          <h3 class="font-bold">${nowOpen ? 'Restaurant ouvert !' : 'Restaurant fermé'}</h3>
-          <div class="text-xs">Le statut a changé</div>
-        </div>
-      </div>
-      <button class="btn btn-sm btn-primary" onclick="window.location.reload()">
-        Actualiser
-      </button>
-      <button class="btn btn-sm btn-ghost" onclick="document.getElementById('update-toast').remove()">
-        ✕
-      </button>
-    `;
-    
-    toastContainer.appendChild(toast);
-    
-    // Auto-supprimer après 30 secondes
-    setTimeout(() => {
-      if (document.getElementById('update-toast')) {
-        document.getElementById('update-toast').remove();
-      }
-    }, 30000);
-  }
+      const cfg  = await res.json() as { horaires?: Record<string, TimeSlot[]> };
+      const open = isOpenNow(cfg.horaires ?? {});
 
-  // ✅ NOUVEAU : Vérifier disponibilité des produits en arrière-plan
-  async function checkProductAvailability() {
-    try {
-      const response = await fetch('/api/menu');
-      const menu = await response.json();
-      const products = menu.produits || [];
-      
-      // Comparer avec les produits affichés
-      let hasChanges = false;
-      
-      products.forEach(product => {
-        const card = document.querySelector(`[data-product-id="${product.id}"]`);
-        if (card) {
-          const currentDisponible = card.querySelector('.btn-primary') !== null;
-          
-          // Si la disponibilité a changé
-          if (product.disponible !== currentDisponible) {
-            hasChanges = true;
-            
-            // Mettre à jour visuellement
-            if (!product.disponible) {
-              // Produit devient indisponible
-              const btn = card.querySelector('button');
-              if (btn) {
-                btn.classList.remove('btn-primary');
-                btn.classList.add('btn-disabled');
-                btn.disabled = true;
-                btn.textContent = 'Victime de son succès';
-              }
-              
-              // Ajouter badge
-              const figure = card.querySelector('figure');
-              if (figure && !figure.querySelector('.badge-error')) {
-                const badge = document.createElement('div');
-                badge.className = 'badge badge-error absolute top-2 right-2';
-                badge.textContent = 'Victime de son succès';
-                figure.appendChild(badge);
-              }
-            }
+      if (lastKnownOpen === null) { lastKnownOpen = open; return; }
+      if (open === lastKnownOpen) return;
+
+      lastKnownOpen = open;
+
+      const modalOpen = !!document.querySelector('dialog[open]');
+      const cartEmpty = getCart().length === 0;
+
+      if (!modalOpen && cartEmpty) {
+        window.location.reload();
+        return;
+      }
+
+      if (hasUpdateToast) return;
+      hasUpdateToast = true;
+
+      const toast = showStatusToast(open);
+      if (toast) {
+        // MutationObserver pour détecter la suppression du toast et réarmer le flag
+        const observer = new MutationObserver(() => {
+          if (!document.contains(toast)) {
+            hasUpdateToast = false;
+            observer.disconnect();
           }
-        }
-      });
-      
-      // Si des produits ont changé, notifier
-      if (hasChanges) {
-        showProductUpdateToast();
+        });
+        observer.observe(
+          document.getElementById('toast-container') ?? document.body,
+          { childList: true, subtree: true }
+        );
       }
-      
-    } catch (error) {
-      console.error('❌ Erreur vérification produits:', error);
+    } catch {
+      // Silencieux — réseau indisponible
     }
   }
 
-  // ✅ NOUVEAU : Toast pour mise à jour produits
-  function showProductUpdateToast() {
-    const toastContainer = document.getElementById('toast-container');
-    if (!toastContainer) return;
-    
-    const toast = document.createElement('div');
-    toast.className = 'alert alert-warning shadow-lg mb-2';
-    toast.innerHTML = `
-      <div>
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-        </svg>
-        <span>Certains produits ont été mis à jour</span>
-      </div>
-    `;
-    
-    toastContainer.appendChild(toast);
-    
-    setTimeout(() => toast.remove(), 8000);
-  }
+  // ── Polling disponibilité produits ───────────
+  async function pollProductAvailability(): Promise<void> {
+    try {
+      const res = await fetch(`${getApiBase()}/menu`);
+      if (!res.ok) return;
 
-  // ✅ Bloquer les commandes si restaurant fermé
-  function updateButtonsState() {
-    if (!isOpen) {
-      document.querySelectorAll('.btn-primary').forEach(btn => {
-        if (btn.textContent.includes('Voir détails') || btn.textContent.includes('Ajouter')) {
-          btn.classList.remove('btn-primary');
-          btn.classList.add('btn-disabled');
-          btn.disabled = true;
-          btn.textContent = 'Restaurant fermé';
+      const menu    = await res.json() as { produits?: { id: string; disponible: boolean }[] };
+      let   changed = false;
+
+      for (const product of (menu.produits ?? [])) {
+        const card = document.querySelector<HTMLElement>(`[data-product-id="${product.id}"]`);
+        if (!card) continue;
+
+        const wasAvailable = card.dataset.available === 'true';
+        if (product.disponible === wasAvailable) continue;
+
+        card.dataset.available = String(product.disponible);
+        changed = true;
+
+        // Mettre à jour le bouton CTA
+        const btn = card.querySelector<HTMLButtonElement>('.btn-open-modal, .btn-disabled');
+        if (btn) {
+          btn.disabled = !product.disponible;
+          btn.classList.toggle('btn-primary',    product.disponible);
+          btn.classList.toggle('btn-open-modal', product.disponible);
+          btn.classList.toggle('btn-disabled',   !product.disponible);
+          btn.textContent = product.disponible ? 'Commander' : 'Victime de son succès';
         }
-      });
-      
-      const originalOpenModal = window.openProductModal;
-      if (originalOpenModal) {
-        window.openProductModal = function() {
-          alert('Le restaurant est actuellement fermé. Les commandes seront disponibles lors de notre prochaine ouverture.');
-        };
+
+        // Overlay épuisé
+        const figure = card.querySelector('figure');
+        const badge  = card.querySelector<HTMLElement>('[data-unavailable-badge]');
+
+        if (!product.disponible && figure && !badge) {
+          const overlay = document.createElement('div');
+          overlay.dataset.unavailableBadge = '';
+          overlay.className = 'absolute inset-0 bg-base-300/60 flex items-center justify-center';
+          const span = document.createElement('span');
+          span.className   = 'badge badge-error badge-lg';
+          span.textContent = 'Épuisé';
+          overlay.appendChild(span);
+          figure.appendChild(overlay);
+        } else if (product.disponible && badge) {
+          badge.remove();
+        }
       }
+
+      if (changed) {
+        showToast('Le menu a été mis à jour', 'info', 6000);
+      }
+    } catch {
+      // Silencieux
     }
   }
 
-  // ✅ Détecter activité utilisateur
-  function trackActivity() {
-    lastActivity = Date.now();
+  // ── Init / cleanup ────────────────────────────
+  function init(): void {
+    updateCartUI();
+
+    // Nettoyer les intervalles précédents (View Transitions)
+    pollIntervals.forEach(clearInterval);
+    pollIntervals = [];
+
+    lastKnownOpen  = null;
+    hasUpdateToast = false;
+
+    // Délai initial pour ne pas surcharger le chargement de page
+    const timeout = setTimeout(() => {
+      void pollOpenStatus();
+      pollIntervals.push(
+        setInterval(() => void pollOpenStatus(),          2 * 60 * 1000),
+        setInterval(() => void pollProductAvailability(), 3 * 60 * 1000)
+      );
+    }, 5000);
+
+    // Nettoyer aussi le timeout si une navigation intervient avant 5s
+    document.addEventListener('astro:before-preparation', () => {
+      clearTimeout(timeout);
+    }, { once: true });
   }
 
-  // Écouter les interactions
-  ['mousedown', 'keydown', 'scroll', 'touchstart'].forEach(event => {
-    document.addEventListener(event, trackActivity, { passive: true });
-  });
+  // Compatible Astro View Transitions
+  document.addEventListener('astro:page-load', init);
+  window.addEventListener('cart-updated', updateCartUI);
+</script>
 
-  // ============================================
-  // 📱 OPTIMISATIONS MOBILE
-  // ============================================
-  
-  function setViewportHeight() {
-    const vh = window.innerHeight * 0.01;
-    document.documentElement.style.setProperty('--vh', `${vh}px`);
-  }
-
-  window.addEventListener('resize', setViewportHeight);
-  window.addEventListener('orientationchange', setViewportHeight);
-
-  // Au chargement de la page
-  document.addEventListener('astro:page-load', () => {
-    updateCartBadge();
-    updateButtonsState();
-    setViewportHeight();
-    
-    // ✅ Démarrer le polling intelligent
-    if (pollingInterval) clearInterval(pollingInterval);
-    
-    // Vérifier le statut toutes les 2 minutes
-    pollingInterval = setInterval(() => {
-      checkStatusInBackground();
-    }, 120000); // 2 minutes
-    
-    // Vérifier les produits toutes les 3 minutes
-    setInterval(() => {
-      checkProductAvailability();
-    }, 180000); // 3 minutes
-  });
-
-  window.addEventListener('cart-updated', updateCartBadge);
+<!--
+  setTheme — is:inline pour qu'il soit accessible depuis n'importe quel composant
+  sans dépendre du bundling Astro. Doit correspondre à la liste dans env.d.ts.
+-->
+<script is:inline>
+  window.setTheme = function (name) {
+    var valid = [
+      'light','dark','cupcake','bumblebee','emerald','corporate',
+      'synthwave','retro','cyberpunk','valentine','halloween','garden',
+      'forest','aqua','lofi','pastel','fantasy','wireframe','black',
+      'luxury','dracula','cmyk','autumn','business','acid','lemonade',
+      'night','coffee','winter','dim','nord','sunset',
+    ];
+    if (valid.indexOf(name) === -1) return;
+    document.documentElement.setAttribute('data-theme', name);
+    var maxAge = 60 * 60 * 24 * 365;
+    document.cookie = 'theme=' + name + '; max-age=' + maxAge + '; path=/; SameSite=Lax';
+    try { localStorage.setItem('theme', name); } catch (_) {}
+  };
 </script>

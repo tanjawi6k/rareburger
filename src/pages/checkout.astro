@@ -1,795 +1,784 @@
 ---
 // src/pages/checkout.astro
-// ============================================
-// 💳 CMDOLA - Page Checkout (CORRIGÉE)
-// ============================================
+export const prerender = false;
 
 import Navbar from '../components/Navbar.astro';
+import api from '../lib/api';
 import '../assets/app.css';
 
-// Pas de prerender car contenu dynamique
-export const prerender = false;
+// ─────────────────────────────────────────
+// Thème SSR
+// ─────────────────────────────────────────
+const VALID_THEMES: readonly string[] = [
+  'light','dark','cupcake','bumblebee','emerald','corporate',
+  'synthwave','retro','cyberpunk','valentine','halloween','garden',
+  'forest','aqua','lofi','pastel','fantasy','wireframe','black',
+  'luxury','dracula','cmyk','autumn','business','acid','lemonade',
+  'night','coffee','winter','dim','nord','sunset',
+];
+const cookieTheme = Astro.cookies.get('theme')?.value;
+
+// ─────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────
+interface TimeSlot { debut: string; fin: string; }
+interface ZoneLivraison {
+  id: string;
+  nom: string;
+  codes_postaux: string[];
+  frais: number;
+  minimum?: number;
+  temps_estime?: string;
+}
+interface ModeConfig {
+  active: boolean;
+  label: string;
+  description: string;
+  icon: string;
+  delai_preparation?: string;
+}
+interface PaymentConfig {
+  active: boolean;
+  label: string;
+  description: string;
+  icon: string;
+}
+
+// ─────────────────────────────────────────
+// Données SSR
+// ─────────────────────────────────────────
+let theme          = 'light';
+let logoUrl        = '/favicon.ico';
+let restaurantName = 'CMDOLA';
+let restaurantTel  = '';
+let isOpen         = false;
+
+// Config sérialisée pour le client (évite un second fetch)
+let configJson = '{}';
+
+function timeToMin(t: string): number {
+  const [h, m] = t.split(':').map(Number);
+  return h * 60 + m;
+}
+const DAY_NAMES_FR: readonly string[] = ['dimanche','lundi','mardi','mercredi','jeudi','vendredi','samedi'];
+
+try {
+  const configData = await api.config.get() as Record<string, any>;
+
+  const configTheme = (configData.theme as Record<string,string>|undefined)?.daisy;
+  theme = (cookieTheme && VALID_THEMES.includes(cookieTheme))
+    ? cookieTheme
+    : (configTheme && VALID_THEMES.includes(configTheme) ? configTheme : 'light');
+
+  const logoFile = (configData.theme as Record<string,string>|undefined)?.logo;
+  logoUrl        = logoFile ? api.images.getUrl(logoFile) : '/favicon.ico';
+  restaurantName = (configData.nom       as string|undefined) ?? 'CMDOLA';
+  restaurantTel  = (configData.telephone as string|undefined) ?? '';
+
+  // Statut ouverture
+  const now   = new Date();
+  const brux  = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Brussels' }));
+  const dayFr = DAY_NAMES_FR[brux.getDay()] ?? 'lundi';
+  const tStr  = `${String(brux.getHours()).padStart(2,'0')}:${String(brux.getMinutes()).padStart(2,'0')}`;
+  const nowMin = timeToMin(tStr);
+  const sched  = ((configData.horaires as Record<string,TimeSlot[]>|undefined)?.[dayFr]) ?? [];
+  isOpen = sched.some(({ debut, fin }) => {
+    const d = timeToMin(debut), f = timeToMin(fin);
+    return f < d ? nowMin >= d || nowMin <= f : nowMin >= d && nowMin <= f;
+  });
+
+  // Passer config au client (modes_service, zones_livraison, methodes_paiement seulement)
+  configJson = JSON.stringify({
+    modes_service:     configData.modes_service     ?? {},
+    zones_livraison:   configData.zones_livraison   ?? [],
+    methodes_paiement: configData.methodes_paiement ?? {},
+  });
+
+} catch (err) {
+  console.error('Erreur config checkout:', err);
+}
+
+const apiBaseUrl: string = import.meta.env.PUBLIC_API_URL ?? 'http://127.0.0.1:5000/api';
 ---
 
 <!DOCTYPE html>
-<html lang="fr" data-theme="autumn">
+<html lang="fr" data-theme={theme}>
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="robots" content="noindex, nofollow" />  
-  <title>Checkout - CMDOLA</title>
-  <link rel="icon" type="image/png" href="/favicon.ico" id="favicon">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <meta name="api-url" content={apiBaseUrl} />
+  <title>Commander — {restaurantName}</title>
+  <link rel="icon" type="image/png" href={logoUrl} id="favicon" />
+
+  <!-- Anti-FOUC thème -->
+  <script is:inline>
+    (function(){
+      var v=['light','dark','cupcake','bumblebee','emerald','corporate',
+        'synthwave','retro','cyberpunk','valentine','halloween','garden','forest',
+        'aqua','lofi','pastel','fantasy','wireframe','black','luxury','dracula',
+        'cmyk','autumn','business','acid','lemonade','night','coffee','winter',
+        'dim','nord','sunset'];
+      var c=document.cookie.split(';').find(function(x){return x.trim().startsWith('theme=');});
+      var t=c?decodeURIComponent(c.split('=')[1].trim()):null;
+      if(t&&v.indexOf(t)!==-1) document.documentElement.setAttribute('data-theme',t);
+    }());
+  </script>
+
+  <!-- Config sérialisée SSR → client (évite un fetch côté client) -->
+  <script id="checkout-config" type="application/json" set:html={configJson} />
 </head>
 
-<body class="bg-base-200 min-h-screen">
-  
-  <Navbar />
-  
-  <!-- Loading Screen -->
-  <div id="loading-screen" class="container mx-auto px-4 py-8">
-    <div class="flex flex-col justify-center items-center h-64">
-      <span class="loading loading-spinner loading-lg text-primary"></span>
-      <p class="mt-4 text-base-content/70">Chargement des informations...</p>
-    </div>
-  </div>
-  
-  <!-- Main Content -->
-  <div id="main-content" style="display: none;" class="container mx-auto px-4 py-8">
-    
-    <!-- Titre -->
-    <h1 class="text-3xl font-bold mb-6">Finaliser la commande</h1>
+<body class="bg-base-200" style="min-height:100dvh;min-height:100vh;">
 
-    <div class="grid lg:grid-cols-3 gap-6">
-      
-      <!-- Formulaire (2/3) -->
+  <header class="sticky top-0 z-40">
+    <Navbar restaurantName={restaurantName} logoUrl={logoUrl} activePage="" />
+  </header>
+
+  {!isOpen && (
+    <div class="container mx-auto px-4 pt-4 max-w-5xl">
+      <div class="alert alert-warning rounded-2xl" role="alert">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+        </svg>
+        <p class="text-sm">Restaurant fermé — vous pouvez préparer votre commande, elle sera traitée à la réouverture.</p>
+      </div>
+    </div>
+  )}
+
+  <!-- Loading -->
+  <div id="loading-screen" class="container mx-auto px-4 py-16 max-w-5xl flex flex-col items-center gap-3">
+    <span class="loading loading-spinner loading-lg text-primary"></span>
+    <p class="text-base-content/60 text-sm">Chargement…</p>
+  </div>
+
+  <!-- Contenu principal (caché jusqu'au JS) -->
+  <div id="main-content" class="container mx-auto px-4 py-6 max-w-5xl hidden">
+
+    <h1 class="text-2xl sm:text-3xl font-bold mb-5 text-base-content">Finaliser la commande</h1>
+
+    <!-- Steps DaisyUI -->
+    <ul class="steps w-full mb-6 text-xs sm:text-sm">
+      <li class="step step-primary" id="step-ind-1">Mode</li>
+      <li class="step" id="step-ind-2">Informations</li>
+      <li class="step" id="step-ind-3">Paiement</li>
+    </ul>
+
+    <div class="grid lg:grid-cols-3 gap-5">
+
+      <!-- Formulaire 2/3 -->
       <div class="lg:col-span-2">
         <div class="card bg-base-100 shadow-sm">
-          <div class="card-body">
-            
-            <!-- Steps indicator -->
-            <ul class="steps w-full mb-8">
-              <li id="step-indicator-1" class="step step-primary">Mode</li>
-              <li id="step-indicator-2" class="step">Informations</li>
-              <li id="step-indicator-3" class="step">Paiement</li>
-            </ul>
+          <div class="card-body gap-5">
 
-            <!-- Étape 1 : Choix du mode de service -->
-            <div id="step-1" class="step-content">
-              <h2 class="text-xl font-bold mb-4">Comment souhaitez-vous recevoir votre commande ?</h2>
-              
-              <div id="service-modes-container" class="grid gap-4">
-                <!-- Rempli dynamiquement par JS -->
-              </div>
-
-              <div class="flex justify-end mt-6">
-                <button id="btn-next-step-1" class="btn btn-primary" disabled>
+            <!-- ÉTAPE 1 — Mode de service -->
+            <section id="step-1" aria-label="Mode de service">
+              <h2 class="text-lg font-bold mb-4">Comment souhaitez-vous recevoir votre commande ?</h2>
+              <div id="service-modes-container" class="grid gap-3"></div>
+              <div class="flex justify-end mt-5">
+                <button id="btn-next-1" class="btn btn-primary gap-2" disabled>
                   Continuer
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-                  </svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
                 </button>
               </div>
-            </div>
+            </section>
 
-            <!-- Étape 2 : Informations client -->
-            <div id="step-2" class="step-content" style="display: none;">
-              <h2 class="text-xl font-bold mb-4">Vos informations</h2>
-              
-              <form id="form-client" class="space-y-4">
-                
-                <!-- Infos de base (tous modes) -->
-                <div class="grid md:grid-cols-2 gap-4">
+            <!-- ÉTAPE 2 — Informations client -->
+            <section id="step-2" class="hidden" aria-label="Vos informations">
+              <h2 class="text-lg font-bold mb-4">Vos informations</h2>
+              <form id="form-client" class="space-y-4" novalidate>
+
+                <div class="grid sm:grid-cols-2 gap-4">
                   <div class="form-control">
-                    <label class="label"><span class="label-text">Prénom *</span></label>
-                    <input type="text" name="prenom" class="input input-bordered" required />
+                    <label class="label" for="inp-prenom"><span class="label-text">Prénom *</span></label>
+                    <input id="inp-prenom" type="text" name="prenom" class="input input-bordered" placeholder="Jean" required autocomplete="given-name" />
                   </div>
                   <div class="form-control">
-                    <label class="label"><span class="label-text">Nom *</span></label>
-                    <input type="text" name="nom" class="input input-bordered" required />
+                    <label class="label" for="inp-nom"><span class="label-text">Nom *</span></label>
+                    <input id="inp-nom" type="text" name="nom" class="input input-bordered" placeholder="Dupont" required autocomplete="family-name" />
                   </div>
                 </div>
 
-                <div class="grid md:grid-cols-2 gap-4">
+                <div class="grid sm:grid-cols-2 gap-4">
                   <div class="form-control">
-                    <label class="label"><span class="label-text">Téléphone *</span></label>
-                    <input type="tel" name="telephone" class="input input-bordered" required />
+                    <label class="label" for="inp-tel"><span class="label-text">Téléphone *</span></label>
+                    <input id="inp-tel" type="tel" name="telephone" class="input input-bordered" placeholder="0470 12 34 56" required autocomplete="tel" />
                   </div>
                   <div class="form-control">
-                    <label class="label"><span class="label-text">Email *</span></label>
-                    <input type="email" name="email" class="input input-bordered" required />
-                  </div>
-                </div>
-
-                <!-- Heure souhaitée (pour à emporter) -->
-                <div id="heure-souhaitee-field" style="display: none;">
-                  <div class="form-control">
-                    <label class="label"><span class="label-text">Heure de retrait souhaitée</span></label>
-                    <input type="time" name="heure_souhaitee" class="input input-bordered" />
+                    <label class="label" for="inp-email"><span class="label-text">Email *</span></label>
+                    <input id="inp-email" type="email" name="email" class="input input-bordered" placeholder="jean@example.com" required autocomplete="email" />
                   </div>
                 </div>
 
-                <!-- Numéro de table (pour sur place) -->
-                <div id="table-field" style="display: none;">
-                  <div class="form-control">
-                    <label class="label"><span class="label-text">Numéro de table</span></label>
-                    <input type="text" name="numero_table" class="input input-bordered" placeholder="Ex: 12" />
-                  </div>
+                <!-- Heure de retrait (emporter) -->
+                <div id="field-heure" class="form-control hidden">
+                  <label class="label" for="inp-heure"><span class="label-text">Heure de retrait souhaitée *</span></label>
+                  <input id="inp-heure" type="time" name="heure_souhaitee" class="input input-bordered" />
+                  <label class="label"><span id="heure-help" class="label-text-alt"></span></label>
                 </div>
 
-                <!-- Adresse (seulement si livraison) -->
-                <div id="adresse-fields" style="display: none;">
-                  <div class="divider">Adresse de livraison</div>
-                  
-                  <div class="grid md:grid-cols-3 gap-4">
-                    <div class="form-control md:col-span-2">
-                      <label class="label"><span class="label-text">Rue *</span></label>
-                      <input type="text" name="rue" class="input input-bordered" />
+                <!-- Numéro de table (sur place) -->
+                <div id="field-table" class="form-control hidden">
+                  <label class="label" for="inp-table"><span class="label-text">Numéro de table</span></label>
+                  <input id="inp-table" type="text" name="numero_table" class="input input-bordered" placeholder="Ex : 12" autocomplete="off" />
+                </div>
+
+                <!-- Adresse (livraison) -->
+                <div id="field-adresse" class="hidden">
+                  <div class="divider text-sm">Adresse de livraison</div>
+                  <div class="grid sm:grid-cols-3 gap-4">
+                    <div class="form-control sm:col-span-2">
+                      <label class="label" for="inp-rue"><span class="label-text">Rue *</span></label>
+                      <input id="inp-rue" type="text" name="rue" class="input input-bordered" placeholder="Rue de la Paix" autocomplete="street-address" />
                     </div>
                     <div class="form-control">
-                      <label class="label"><span class="label-text">Numéro *</span></label>
-                      <input type="text" name="numero" class="input input-bordered" />
+                      <label class="label" for="inp-num"><span class="label-text">N° *</span></label>
+                      <input id="inp-num" type="text" name="numero" class="input input-bordered" placeholder="42" />
                     </div>
                   </div>
-
-                  <div class="grid md:grid-cols-2 gap-4 mt-4">
+                  <div class="grid sm:grid-cols-2 gap-4 mt-4">
                     <div class="form-control">
-                      <label class="label"><span class="label-text">Code postal *</span></label>
-                      <input type="text" name="code_postal" id="code-postal-input" class="input input-bordered" />
-                      <label class="label">
-                        <span id="zone-info" class="label-text-alt"></span>
-                      </label>
+                      <label class="label" for="inp-cp"><span class="label-text">Code postal *</span></label>
+                      <input id="inp-cp" type="text" name="code_postal" class="input input-bordered" placeholder="6000" pattern="[0-9]{4}" inputmode="numeric" autocomplete="postal-code" />
+                      <label class="label"><span id="zone-info" class="label-text-alt"></span></label>
                     </div>
                     <div class="form-control">
-                      <label class="label"><span class="label-text">Ville *</span></label>
-                      <input type="text" name="ville" class="input input-bordered" />
+                      <label class="label" for="inp-ville"><span class="label-text">Ville *</span></label>
+                      <input id="inp-ville" type="text" name="ville" class="input input-bordered" placeholder="Charleroi" autocomplete="address-level2" />
                     </div>
                   </div>
                 </div>
 
-                <!-- Notes optionnelles -->
+                <!-- Notes -->
                 <div class="form-control">
-                  <label class="label"><span class="label-text">Commentaires (optionnel)</span></label>
-                  <textarea name="notes" class="textarea textarea-bordered" rows="3" placeholder="Instructions de livraison, allergies..."></textarea>
+                  <label class="label" for="inp-notes"><span class="label-text">Commentaires (optionnel)</span></label>
+                  <textarea id="inp-notes" name="notes" class="textarea textarea-bordered" rows="2" placeholder="Instructions, allergies, demandes spéciales…"></textarea>
                 </div>
 
               </form>
 
-              <div class="flex justify-between mt-6">
-                <button id="btn-back-step-2" class="btn btn-ghost">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-                  </svg>
+              <div class="flex justify-between mt-5">
+                <button id="btn-back-2" class="btn btn-ghost gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
                   Retour
                 </button>
-                <button id="btn-next-step-2" class="btn btn-primary">
+                <button id="btn-next-2" class="btn btn-primary gap-2">
                   Continuer
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-                  </svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
                 </button>
               </div>
-            </div>
+            </section>
 
-            <!-- Étape 3 : Paiement -->
-            <div id="step-3" class="step-content" style="display: none;">
-              <h2 class="text-xl font-bold mb-4">Mode de paiement</h2>
-              
-              <div id="payment-methods" class="grid gap-4">
-                <!-- Rempli dynamiquement -->
-              </div>
-
-              <div class="flex justify-between mt-6">
-                <button id="btn-back-step-3" class="btn btn-ghost">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-                  </svg>
+            <!-- ÉTAPE 3 — Paiement -->
+            <section id="step-3" class="hidden" aria-label="Mode de paiement">
+              <h2 class="text-lg font-bold mb-4">Mode de paiement</h2>
+              <div id="payment-methods" class="grid gap-3"></div>
+              <div class="flex justify-between mt-5">
+                <button id="btn-back-3" class="btn btn-ghost gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
                   Retour
                 </button>
-                <button id="btn-confirm-order" class="btn btn-primary" disabled>
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                  </svg>
+                <button id="btn-confirm" class="btn btn-primary gap-2" disabled>
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
                   Confirmer la commande
                 </button>
               </div>
-            </div>
+            </section>
 
           </div>
         </div>
       </div>
 
-      <!-- Résumé commande (1/3) -->
+      <!-- Résumé 1/3 -->
       <div class="lg:col-span-1">
-        <div class="card bg-base-100 shadow-sm sticky top-4">
-          <div class="card-body">
-            <h2 class="card-title">Récapitulatif</h2>
-            <div class="divider my-2"></div>
-            
-            <!-- Liste des articles -->
-            <div id="summary-items-list" class="space-y-2 mb-4 max-h-64 overflow-y-auto">
-              <!-- Rempli par JS -->
+        <div class="card bg-base-100 shadow-sm sticky top-20">
+          <div class="card-body gap-3">
+            <h2 class="card-title text-base">Récapitulatif</h2>
+            <div class="divider my-0"></div>
+            <div id="summary-items" class="space-y-2 max-h-60 overflow-y-auto text-sm"></div>
+            <div class="divider my-0"></div>
+            <div class="flex justify-between text-sm">
+              <span class="text-base-content/70">Sous-total</span>
+              <span id="summary-subtotal" class="font-semibold tabular-nums">0,00 €</span>
             </div>
-            
-            <div class="divider my-2"></div>
-            
-            <div class="space-y-3">
-              <div class="flex justify-between">
-                <span>Sous-total (<span id="summary-items-count">0</span> articles)</span>
-                <span id="summary-subtotal" class="font-semibold">0.00€</span>
-              </div>
-              
-              <div id="summary-delivery-row" class="flex justify-between" style="display: none;">
-                <span id="summary-delivery-label">Frais</span>
-                <span id="summary-delivery-fees" class="font-semibold">0.00€</span>
-              </div>
-              
-              <div class="divider my-2"></div>
-              
-              <div class="flex justify-between text-lg">
-                <span class="font-bold">Total</span>
-                <span id="summary-total" class="font-bold text-primary">0.00€</span>
-              </div>
+            <div id="summary-delivery-row" class="hidden flex justify-between text-sm">
+              <span id="summary-delivery-label" class="text-base-content/70">Livraison</span>
+              <span id="summary-delivery-fees" class="font-semibold tabular-nums">0,00 €</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="font-bold">Total</span>
+              <span id="summary-total" class="font-bold text-primary text-lg tabular-nums">0,00 €</span>
             </div>
           </div>
         </div>
       </div>
+
     </div>
   </div>
 
-  <div id="toast-container" class="toast toast-top toast-end z-50"></div>
+  <div id="toast-container" class="toast toast-top toast-end z-50" aria-live="polite"></div>
 
 </body>
 </html>
 
+<style>
+  @media (pointer: coarse) { button, a { min-height: 44px; } }
+  @media (max-width: 640px) { input, select, textarea { font-size: 16px !important; } }
+
+  /* Carte mode de service / paiement sélectionnée */
+  .mode-card:has(input:checked) {
+    border-color: oklch(var(--p));
+    background: oklch(var(--p) / 0.06);
+  }
+</style>
+
 <script>
-// ==========================================
-// 🚀 Imports
-// ==========================================
-import { api } from '../lib/api';
+  // ════════════════════════════════════════════
+  //  Checkout — script bundlé TypeScript
+  //  Config lue depuis <script type="application/json">
+  //  API calls via fetch direct (pas d'import relatif)
+  // ════════════════════════════════════════════
 
-// ==========================================
-// Variables Globales
-// ==========================================
-let config = {};
-let modesService = {};
-let zonesFraisLivraison = [];
-let methodesPaiement = {};
+  // ── Types ─────────────────────────────────────
+  interface CartItem {
+    id: string; nom: string; prix: number; quantite: number;
+    supplements?: { id: string; name: string; price: number }[];
+    removed_ingredients?: string[];
+    choices_selected?: { option_name: string; price_modifier: number }[];
+  }
+  interface ZoneLivraison {
+    id: string; nom: string; codes_postaux: string[];
+    frais: number; minimum?: number; temps_estime?: string;
+  }
+  interface ModeConfig  { active: boolean; label: string; description: string; icon: string; delai_preparation?: string; }
+  interface PaymentConfig { active: boolean; label: string; description: string; icon: string; }
+  interface CheckoutConfig {
+    modes_service:     Record<string, ModeConfig>;
+    zones_livraison:   ZoneLivraison[];
+    methodes_paiement: Record<string, PaymentConfig>;
+  }
 
-let currentStep = 1;
-let selectedMode = '';
-let selectedZone = null;
-let selectedPaymentMethod = '';
-let cart = [];
+  // ── État ──────────────────────────────────────
+  let cfg: CheckoutConfig = { modes_service: {}, zones_livraison: [], methodes_paiement: {} };
+  let cart: CartItem[]    = [];
+  let selectedMode        = '';
+  let selectedZone: ZoneLivraison | null = null;
+  let selectedPayment     = '';
+  let heureMinStr         = '';
 
-// ==========================================
-// Utilitaires
-// ==========================================
-function formatPrice(price) {
-  return new Intl.NumberFormat('fr-BE', {
-    style: 'currency',
-    currency: 'EUR',
-  }).format(price);
-}
+  // ── Helpers ───────────────────────────────────
+  const fmt = (n: number) =>
+    new Intl.NumberFormat('fr-BE', { style: 'currency', currency: 'EUR' }).format(n);
 
-function showToast(message, type = 'info') {
-  const toast = document.createElement('div');
-  toast.className = `alert alert-${type} shadow-lg`;
-  toast.innerHTML = `<span>${message}</span>`;
-  document.getElementById('toast-container').appendChild(toast);
-  setTimeout(() => toast.remove(), 3000);
-}
+  function esc(v: unknown): string {
+    const d = document.createElement('div');
+    d.textContent = String(v ?? '');
+    return d.innerHTML;
+  }
 
-// ==========================================
-// Chargement Configuration
-// ==========================================
-async function loadConfig() {
-  try {
-    console.log('🔍 Chargement config...');
-    
-    // ✅ Utilise api.ts
-    config = await api.config.get();
-    
-    console.log('✅ Config chargée:', config);
-    
-    // Extraire les données
-    modesService = config.modes_service || {};
-    zonesFraisLivraison = config.zones_livraison || [];
-    methodesPaiement = config.methodes_paiement || {};
-    
-    // Vérifier qu'il y a au moins un mode actif
-    const hasActiveMode = Object.values(modesService).some(mode => mode?.active);
-    if (!hasActiveMode) {
-      throw new Error('Aucun mode de service disponible');
+  function getApiBase(): string {
+    return document.querySelector<HTMLMetaElement>('meta[name="api-url"]')?.content
+      ?? 'http://127.0.0.1:5000/api';
+  }
+
+  function showToast(msg: string, type: 'info'|'success'|'warning'|'error' = 'info') {
+    const c = document.getElementById('toast-container');
+    if (!c) return;
+    const el = document.createElement('div');
+    el.className = `alert alert-${type} shadow-md text-sm py-2 px-4 rounded-xl`;
+    el.textContent = msg;
+    c.appendChild(el);
+    setTimeout(() => el.remove(), 4000);
+  }
+
+  function q<T extends HTMLElement>(sel: string) {
+    return document.querySelector<T>(sel);
+  }
+
+  // ── Steps ─────────────────────────────────────
+  function showStep(n: 1|2|3) {
+    [1,2,3].forEach(i => {
+      const sec = document.getElementById(`step-${i}`);
+      const ind = document.getElementById(`step-ind-${i}`);
+      sec?.classList.toggle('hidden', i !== n);
+      if (ind) {
+        ind.classList.toggle('step-primary', i <= n);
+      }
+    });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  // ── Résumé ────────────────────────────────────
+  function updateSummary() {
+    const itemsEl = document.getElementById('summary-items')!;
+    itemsEl.innerHTML = '';
+
+    cart.forEach(item => {
+      const details: string[] = [];
+      item.choices_selected?.forEach(c => details.push(`• ${esc(c.option_name)}`));
+      item.supplements?.forEach(s => details.push(`+ ${esc(s.name)}`));
+      if (item.removed_ingredients?.length) {
+        details.push(`Sans : ${item.removed_ingredients.map(esc).join(', ')}`);
+      }
+
+      const row = document.createElement('div');
+      row.className = 'pb-2 mb-2 border-b border-base-300 last:border-0';
+      row.innerHTML = `
+        <div class="flex justify-between gap-2">
+          <div class="flex-1 min-w-0">
+            <p class="font-medium truncate">${item.quantite}× ${esc(item.nom)}</p>
+            ${details.length ? `<p class="text-xs text-base-content/50 mt-0.5">${details.join(' ')}</p>` : ''}
+          </div>
+          <span class="font-semibold tabular-nums shrink-0">${fmt(item.prix * item.quantite)}</span>
+        </div>
+      `;
+      itemsEl.appendChild(row);
+    });
+
+    const subtotal = cart.reduce((s, i) => s + i.prix * i.quantite, 0);
+    const frais    = selectedMode === 'livraison' && selectedZone ? selectedZone.frais : 0;
+
+    q('#summary-subtotal')!.textContent = fmt(subtotal);
+    q('#summary-total')!.textContent    = fmt(subtotal + frais);
+
+    const delivRow = document.getElementById('summary-delivery-row')!;
+    if (frais > 0 && selectedZone) {
+      delivRow.classList.remove('hidden');
+      q('#summary-delivery-label')!.textContent = `Livraison (${selectedZone.nom})`;
+      q('#summary-delivery-fees')!.textContent  = fmt(frais);
+    } else {
+      delivRow.classList.add('hidden');
     }
-    
-    // Appliquer le thème
-    if (config.theme?.daisy) {
-      document.documentElement.setAttribute('data-theme', config.theme.daisy);
+  }
+
+  // ── Étape 1 : Modes de service ────────────────
+  function renderModes() {
+    const container = document.getElementById('service-modes-container')!;
+    container.innerHTML = '';
+
+    const modeKeys: (keyof typeof cfg.modes_service)[] = ['sur_place', 'emporter', 'livraison'];
+    modeKeys.forEach(key => {
+      const m = cfg.modes_service[key];
+      if (!m?.active) return;
+
+      const label = document.createElement('label');
+      label.className = 'mode-card card card-compact bg-base-100 border-2 border-base-300 cursor-pointer transition-colors';
+
+      const extra = key === 'emporter' && m.delai_preparation
+        ? `<p class="text-xs text-info mt-1">⏱ ${esc(m.delai_preparation)}</p>`
+        : '';
+
+      label.innerHTML = `
+        <div class="card-body">
+          <div class="flex items-center gap-4">
+            <input type="radio" name="mode_service" value="${key}" class="radio radio-primary shrink-0" />
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="text-2xl" aria-hidden="true">${esc(m.icon)}</span>
+                <h3 class="font-bold text-sm">${esc(m.label)}</h3>
+              </div>
+              <p class="text-xs text-base-content/60 mt-0.5">${esc(m.description)}</p>
+              ${extra}
+            </div>
+          </div>
+        </div>
+      `;
+      container.appendChild(label);
+    });
+
+    container.addEventListener('change', (e) => {
+      const target = e.target as HTMLInputElement;
+      if (target.name === 'mode_service') {
+        selectedMode = target.value;
+        q<HTMLButtonElement>('#btn-next-1')!.disabled = false;
+      }
+    });
+  }
+
+  // ── Étape 2 : Champs dynamiques ──────────────
+  function setupStep2Fields() {
+    const fieldAdresse = document.getElementById('field-adresse')!;
+    const fieldHeure   = document.getElementById('field-heure')!;
+    const fieldTable   = document.getElementById('field-table')!;
+    const inpHeure     = q<HTMLInputElement>('#inp-heure')!;
+    const inpRue       = q<HTMLInputElement>('#inp-rue')!;
+    const inpNum       = q<HTMLInputElement>('#inp-num')!;
+    const inpCp        = q<HTMLInputElement>('#inp-cp')!;
+    const inpVille     = q<HTMLInputElement>('#inp-ville')!;
+
+    // Reset
+    fieldAdresse.classList.add('hidden');
+    fieldHeure.classList.add('hidden');
+    fieldTable.classList.add('hidden');
+    [inpRue, inpNum, inpCp, inpVille].forEach(el => el.required = false);
+    inpHeure.required = false;
+
+    if (selectedMode === 'livraison') {
+      fieldAdresse.classList.remove('hidden');
+      [inpRue, inpNum, inpCp, inpVille].forEach(el => el.required = true);
+    } else if (selectedMode === 'emporter') {
+      fieldHeure.classList.remove('hidden');
+      inpHeure.required = true;
+      setupHeureMin();
+    } else if (selectedMode === 'sur_place') {
+      fieldTable.classList.remove('hidden');
     }
-    
-    // Appliquer le logo
-    if (config.theme?.logo) {
-      // ✅ Utilise api.images.getUrl()
-      const logoUrl = api.images.getUrl(config.theme.logo);
-      const favicon = document.getElementById('favicon');
-      if (favicon) favicon.href = logoUrl;
+  }
+
+  // ── Heure minimum (+30 min) ───────────────────
+  function setupHeureMin() {
+    const inpHeure = q<HTMLInputElement>('#inp-heure')!;
+    const helpEl   = document.getElementById('heure-help')!;
+
+    const now = new Date();
+    const min = new Date(now.getTime() + 30 * 60000);
+    heureMinStr = `${String(min.getHours()).padStart(2,'0')}:${String(min.getMinutes()).padStart(2,'0')}`;
+
+    inpHeure.min = heureMinStr;
+    helpEl.textContent = `Heure minimum : ${heureMinStr} (dans 30 minutes)`;
+    helpEl.className = 'label-text-alt text-info';
+  }
+
+  function validateHeure(val: string): { ok: boolean; msg: string } {
+    if (!val) return { ok: false, msg: 'Veuillez sélectionner une heure' };
+    const now  = new Date();
+    const min  = new Date(now.getTime() + 30 * 60000);
+    const [h, m] = val.split(':').map(Number);
+    const sel  = new Date(); sel.setHours(h, m, 0, 0);
+    if (sel >= min) return { ok: true, msg: '' };
+    // Cas passage minuit
+    const tomorrow = new Date(now); tomorrow.setDate(now.getDate() + 1); tomorrow.setHours(h, m, 0, 0);
+    if (tomorrow >= min) return { ok: true, msg: `Retrait demain à ${val}` };
+    return { ok: false, msg: `Heure minimum : ${heureMinStr}` };
+  }
+
+  // ── Code postal → zone livraison ──────────────
+  function setupCodePostal() {
+    const inpCp = q<HTMLInputElement>('#inp-cp');
+    if (!inpCp) return;
+
+    inpCp.addEventListener('input', () => {
+      const cp      = inpCp.value.trim();
+      const zoneEl  = document.getElementById('zone-info')!;
+      const zone    = cfg.zones_livraison.find(z => z.codes_postaux.includes(cp));
+
+      if (zone) {
+        selectedZone = zone;
+        zoneEl.textContent = `✓ ${zone.nom} — Livraison ${fmt(zone.frais)}${zone.temps_estime ? ` · ${zone.temps_estime}` : ''}`;
+        zoneEl.className   = 'label-text-alt text-success';
+        updateSummary();
+      } else if (cp.length >= 4) {
+        selectedZone = null;
+        zoneEl.textContent = '✗ Hors zone de livraison';
+        zoneEl.className   = 'label-text-alt text-error';
+        updateSummary();
+      } else {
+        selectedZone = null;
+        zoneEl.textContent = '';
+        updateSummary();
+      }
+    });
+  }
+
+  // ── Étape 3 : Méthodes de paiement ───────────
+  function renderPaymentMethods() {
+    const container = document.getElementById('payment-methods')!;
+    container.innerHTML = '';
+
+    const available: string[] =
+      selectedMode === 'sur_place'
+        ? ['comptoir', 'en_ligne']
+        : ['reception', 'en_ligne'];
+
+    let hasAny = false;
+    available.forEach(key => {
+      const m = cfg.methodes_paiement[key];
+      if (!m?.active) return;
+      hasAny = true;
+
+      const label = document.createElement('label');
+      label.className = 'mode-card card card-compact bg-base-100 border-2 border-base-300 cursor-pointer transition-colors';
+      label.innerHTML = `
+        <div class="card-body">
+          <div class="flex items-center gap-4">
+            <input type="radio" name="payment_method" value="${key}" class="radio radio-primary shrink-0" />
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="text-2xl" aria-hidden="true">${esc(m.icon)}</span>
+                <h3 class="font-bold text-sm">${esc(m.label)}</h3>
+              </div>
+              <p class="text-xs text-base-content/60 mt-0.5">${esc(m.description)}</p>
+            </div>
+          </div>
+        </div>
+      `;
+      container.appendChild(label);
+    });
+
+    if (!hasAny) {
+      const warn = document.createElement('div');
+      warn.className   = 'alert alert-warning text-sm';
+      warn.textContent = 'Aucune méthode de paiement disponible.';
+      container.appendChild(warn);
     }
-    
-    // Générer les options dynamiquement
-    renderServiceModes();
-    
+
+    container.addEventListener('change', (e) => {
+      const t = e.target as HTMLInputElement;
+      if (t.name === 'payment_method') {
+        selectedPayment = t.value;
+        q<HTMLButtonElement>('#btn-confirm')!.disabled = false;
+      }
+    });
+  }
+
+  // ── Envoi commande ────────────────────────────
+  async function submitOrder() {
+    const btn = q<HTMLButtonElement>('#btn-confirm')!;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="loading loading-spinner loading-sm"></span> Envoi…';
+
+    try {
+      const form     = q<HTMLFormElement>('#form-client')!;
+      const data     = Object.fromEntries(new FormData(form));
+      const subtotal = cart.reduce((s, i) => s + i.prix * i.quantite, 0);
+
+      const order: Record<string, unknown> = {
+        type: selectedMode,
+        client: {
+          nom:       data.nom,
+          prenom:    data.prenom,
+          email:     data.email,
+          telephone: data.telephone,
+        },
+        articles:    cart,
+        sous_total:  subtotal,
+        notes:       data.notes ?? '',
+        source:      'web',
+      };
+
+      if (selectedMode === 'livraison') {
+        (order.client as Record<string,unknown>).adresse = {
+          rue: data.rue, numero: data.numero,
+          code_postal: data.code_postal, ville: data.ville,
+        };
+        order.frais_livraison = selectedZone?.frais ?? 0;
+        order.zone_livraison  = selectedZone?.id;
+        order.temps_estime    = selectedZone?.temps_estime;
+      } else {
+        order.frais_livraison = 0;
+        if (selectedMode === 'emporter') order.heure_souhaitee = data.heure_souhaitee ?? null;
+        if (selectedMode === 'sur_place') order.numero_table   = data.numero_table ?? null;
+      }
+
+      order.prix_total = subtotal + ((order.frais_livraison as number) ?? 0);
+      order.paiement   = selectedPayment === 'en_ligne'
+        ? { mode: 'en_ligne',      statut: 'en_attente_paiement' }
+        : { mode: selectedPayment, statut: 'a_reception' };
+
+      const res = await fetch(`${getApiBase()}/commandes`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(order),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as any).error ?? `Erreur ${res.status}`);
+      }
+
+      const result = await res.json() as { id: string };
+      localStorage.setItem('last_order', JSON.stringify(result));
+
+      if (selectedPayment === 'en_ligne') {
+        window.location.href = `/stripe-checkout?order=${result.id}`;
+      } else {
+        localStorage.removeItem('cart');
+        window.dispatchEvent(new CustomEvent('cart-updated'));
+        window.location.href = `/confirmation?order=${result.id}`;
+      }
+
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Erreur inconnue';
+      showToast(`Erreur : ${msg}`, 'error');
+      btn.disabled = false;
+      btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg> Confirmer la commande';
+    }
+  }
+
+  // ── Init ──────────────────────────────────────
+  function init() {
+    // Lire la config depuis le tag JSON injecté SSR
+    const cfgEl = document.getElementById('checkout-config');
+    try {
+      cfg = JSON.parse(cfgEl?.textContent ?? '{}') as CheckoutConfig;
+    } catch {
+      cfg = { modes_service: {}, zones_livraison: [], methodes_paiement: {} };
+    }
+
+    // Charger le panier
+    try { cart = JSON.parse(localStorage.getItem('cart') ?? '[]'); } catch { cart = []; }
+
+    if (cart.length === 0) {
+      showToast('Votre panier est vide', 'warning');
+      setTimeout(() => { window.location.href = '/cart'; }, 1500);
+      return;
+    }
+
+    updateSummary();
+    renderModes();
+    setupCodePostal();
+
     // Afficher le contenu
-    document.getElementById('loading-screen').style.display = 'none';
-    document.getElementById('main-content').style.display = 'block';
-    
-  } catch (error) {
-    console.error('❌ Erreur chargement config:', error);
-    document.getElementById('loading-screen').innerHTML = `
-      <div class="flex flex-col justify-center items-center h-64">
-        <div class="alert alert-error">
-          <span>Impossible de charger la configuration. Veuillez réessayer.</span>
-        </div>
-        <button onclick="location.reload()" class="btn btn-primary mt-4">Réessayer</button>
-      </div>
-    `;
-  }
-}
+    document.getElementById('loading-screen')?.classList.add('hidden');
+    document.getElementById('main-content')?.classList.remove('hidden');
 
-// ==========================================
-// Génération Modes de Service
-// ==========================================
-function renderServiceModes() {
-  const container = document.getElementById('service-modes-container');
-  if (!container) return;
-  
-  container.innerHTML = '';
-  
-  // Sur place
-  if (modesService.sur_place?.active) {
-    const html = `
-      <label class="card card-compact bg-base-100 border-2 border-base-300 cursor-pointer hover:border-primary transition-colors">
-        <div class="card-body">
-          <div class="flex items-center gap-4">
-            <input type="radio" name="mode_service" value="sur_place" class="radio radio-primary" />
-            <div class="flex-1">
-              <div class="flex items-center gap-2">
-                <span class="text-2xl">${modesService.sur_place.icon}</span>
-                <h3 class="font-bold">${modesService.sur_place.label}</h3>
-              </div>
-              <p class="text-sm text-base-content/70">${modesService.sur_place.description}</p>
-            </div>
-          </div>
-        </div>
-      </label>
-    `;
-    container.insertAdjacentHTML('beforeend', html);
-  }
-  
-  // À emporter
-  if (modesService.emporter?.active) {
-    const delaiHtml = modesService.emporter.delai_preparation 
-      ? `<p class="text-sm text-info mt-1">⏱️ ${modesService.emporter.delai_preparation}</p>` 
-      : '';
-    
-    const html = `
-      <label class="card card-compact bg-base-100 border-2 border-base-300 cursor-pointer hover:border-primary transition-colors">
-        <div class="card-body">
-          <div class="flex items-center gap-4">
-            <input type="radio" name="mode_service" value="emporter" class="radio radio-primary" />
-            <div class="flex-1">
-              <div class="flex items-center gap-2">
-                <span class="text-2xl">${modesService.emporter.icon}</span>
-                <h3 class="font-bold">${modesService.emporter.label}</h3>
-              </div>
-              <p class="text-sm text-base-content/70">${modesService.emporter.description}</p>
-              ${delaiHtml}
-            </div>
-          </div>
-        </div>
-      </label>
-    `;
-    container.insertAdjacentHTML('beforeend', html);
-  }
-  
-  // Livraison
-  if (modesService.livraison?.active) {
-    const html = `
-      <label class="card card-compact bg-base-100 border-2 border-base-300 cursor-pointer hover:border-primary transition-colors">
-        <div class="card-body">
-          <div class="flex items-center gap-4">
-            <input type="radio" name="mode_service" value="livraison" class="radio radio-primary" />
-            <div class="flex-1">
-              <div class="flex items-center gap-2">
-                <span class="text-2xl">${modesService.livraison.icon}</span>
-                <h3 class="font-bold">${modesService.livraison.label}</h3>
-              </div>
-              <p class="text-sm text-base-content/70">${modesService.livraison.description}</p>
-            </div>
-          </div>
-        </div>
-      </label>
-    `;
-    container.insertAdjacentHTML('beforeend', html);
-  }
-  
-  // Ajouter les event listeners
-  document.querySelectorAll('input[name="mode_service"]').forEach(radio => {
-    radio.addEventListener('change', (e) => {
-      selectedMode = e.target.value;
-      document.getElementById('btn-next-step-1').disabled = false;
-      console.log('✅ Mode sélectionné:', selectedMode);
+    // ── Boutons navigation ──────────────────────
+    q('#btn-next-1')?.addEventListener('click', () => {
+      if (!selectedMode) { showToast('Veuillez choisir un mode de service', 'warning'); return; }
+      setupStep2Fields();
+      showStep(2);
     });
-  });
-}
 
-// ==========================================
-// Génération Méthodes Paiement
-// ==========================================
-function renderPaymentMethods() {
-  const container = document.getElementById('payment-methods');
-  container.innerHTML = '';
-  
-  let availableMethods = [];
-  
-  // Déterminer les méthodes disponibles selon le mode
-  if (selectedMode === 'sur_place') {
-    if (methodesPaiement.comptoir?.active) availableMethods.push('comptoir');
-    if (methodesPaiement.en_ligne?.active) availableMethods.push('en_ligne');
-  } else if (selectedMode === 'emporter') {
-    if (methodesPaiement.reception?.active) availableMethods.push('reception');
-    if (methodesPaiement.en_ligne?.active) availableMethods.push('en_ligne');
-  } else if (selectedMode === 'livraison') {
-    if (methodesPaiement.reception?.active) availableMethods.push('reception');
-    if (methodesPaiement.en_ligne?.active) availableMethods.push('en_ligne');
-  }
-  
-  if (availableMethods.length === 0) {
-    container.innerHTML = '<div class="alert alert-warning">Aucune méthode de paiement disponible</div>';
-    return;
-  }
-  
-  availableMethods.forEach(method => {
-    const methodConfig = methodesPaiement[method];
-    const card = document.createElement('label');
-    card.className = 'card card-compact bg-base-100 border-2 border-base-300 cursor-pointer hover:border-primary transition-colors';
-    card.innerHTML = `
-      <div class="card-body">
-        <div class="flex items-center gap-4">
-          <input type="radio" name="payment_method" value="${method}" class="radio radio-primary" />
-          <div class="flex-1">
-            <div class="flex items-center gap-2">
-              <span class="text-2xl">${methodConfig.icon}</span>
-              <h3 class="font-bold">${methodConfig.label}</h3>
-            </div>
-            <p class="text-sm text-base-content/70">${methodConfig.description}</p>
-          </div>
-        </div>
-      </div>
-    `;
-    container.appendChild(card);
-  });
-  
-  // Écouter les changements
-  document.querySelectorAll('input[name="payment_method"]').forEach(radio => {
-    radio.addEventListener('change', (e) => {
-      selectedPaymentMethod = e.target.value;
-      document.getElementById('btn-confirm-order').disabled = false;
-      console.log('✅ Paiement sélectionné:', selectedPaymentMethod);
+    q('#btn-back-2')?.addEventListener('click', () => showStep(1));
+
+    q('#btn-next-2')?.addEventListener('click', () => {
+      const form = q<HTMLFormElement>('#form-client')!;
+
+      // Validation HTML5
+      if (!form.checkValidity()) { form.reportValidity(); return; }
+
+      // Validation heure
+      if (selectedMode === 'emporter') {
+        const val    = q<HTMLInputElement>('#inp-heure')!.value;
+        const result = validateHeure(val);
+        const helpEl = document.getElementById('heure-help')!;
+        if (!result.ok) {
+          helpEl.textContent = result.msg;
+          helpEl.className   = 'label-text-alt text-error';
+          q('#inp-heure')?.focus();
+          return;
+        }
+        if (result.msg) {
+          helpEl.textContent = result.msg;
+          helpEl.className   = 'label-text-alt text-success';
+        }
+      }
+
+      // Validation zone livraison
+      if (selectedMode === 'livraison' && !selectedZone) {
+        showToast('Code postal hors zone de livraison', 'error');
+        q('#inp-cp')?.focus();
+        return;
+      }
+
+      renderPaymentMethods();
+      showStep(3);
     });
-  });
-}
 
-// ==========================================
-// Gestion Panier
-// ==========================================
-function loadCart() {
-  cart = JSON.parse(localStorage.getItem('cart') || '[]');
-  console.log('🛒 Panier chargé:', cart.length, 'articles');
-  
-  if (cart.length === 0) {
-    showToast('Votre panier est vide', 'warning');
-    setTimeout(() => window.location.href = '/cart', 1500);
-    return;
+    q('#btn-back-3')?.addEventListener('click', () => showStep(2));
+    q('#btn-confirm')?.addEventListener('click', () => void submitOrder());
   }
-  updateSummary();
-}
 
-function updateSummary() {
-  const subtotal = cart.reduce((sum, item) => sum + (item.prix * item.quantite), 0);
-  const itemsCount = cart.reduce((sum, item) => sum + item.quantite, 0);
-  
-  // Afficher la liste des articles avec détails
-  const itemsList = document.getElementById('summary-items-list');
-  itemsList.innerHTML = cart.map(item => {
-    // Construire les détails (choices + suppléments + sans)
-    const details = [];
-    
-    // ✅ Ajouter les choix
-    if (item.choices_selected && item.choices_selected.length > 0) {
-      item.choices_selected.forEach(choice => {
-        details.push(`• ${choice.option_name}`);
-      });
-    }
-    
-    // Ajouter les suppléments
-    if (item.supplements && item.supplements.length > 0) {
-      item.supplements.forEach(supp => {
-        details.push(`+ ${supp.name}`);
-      });
-    }
-    
-    // Ajouter les ingrédients retirés
-    if (item.removed_ingredients && item.removed_ingredients.length > 0) {
-      details.push(`Sans: ${item.removed_ingredients.join(', ')}`);
-    }
-    
-    const detailsHtml = details.length > 0 
-      ? `<div class="text-xs text-base-content/60 mt-0.5">${details.join(' ')}</div>` 
-      : '';
-    
-    return `
-      <div class="pb-2 mb-2 border-b border-base-300 last:border-0">
-        <div class="flex justify-between text-sm">
-          <div class="flex-1">
-            <div class="font-medium">${item.quantite}x ${item.nom}</div>
-            ${detailsHtml}
-          </div>
-          <span class="font-semibold ml-2">${formatPrice(item.prix * item.quantite)}</span>
-        </div>
-      </div>
-    `;
-  }).join('');
-  
-  document.getElementById('summary-items-count').textContent = itemsCount;
-  document.getElementById('summary-subtotal').textContent = formatPrice(subtotal);
-  
-  // Frais de livraison (reste inchangé)
-  let deliveryFees = 0;
-  if (selectedMode === 'livraison' && selectedZone) {
-    deliveryFees = selectedZone.frais;
-    document.getElementById('summary-delivery-row').style.display = 'flex';
-    document.getElementById('summary-delivery-label').textContent = `Livraison (${selectedZone.nom})`;
-    document.getElementById('summary-delivery-fees').textContent = formatPrice(deliveryFees);
-  } else {
-    document.getElementById('summary-delivery-row').style.display = 'none';
-  }
-  
-  const total = subtotal + deliveryFees;
-  document.getElementById('summary-total').textContent = formatPrice(total);
-}
-
-
-
-// ==========================================
-// Navigation entre Étapes
-// ==========================================
-function showStep(step) {
-  // Masquer toutes les étapes
-  document.querySelectorAll('.step-content').forEach(el => el.style.display = 'none');
-  
-  // Afficher l'étape demandée
-  document.getElementById(`step-${step}`).style.display = 'block';
-  
-  // Mettre à jour les indicateurs
-  for (let i = 1; i <= 3; i++) {
-    const indicator = document.getElementById(`step-indicator-${i}`);
-    if (i <= step) {
-      indicator.classList.add('step-primary');
-    } else {
-      indicator.classList.remove('step-primary');
-    }
-  }
-  
-  currentStep = step;
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-}
-
-
-
-
-// ==========================================
-// Étape 1 : Mode de Service
-// ==========================================
-document.getElementById('btn-next-step-1')?.addEventListener('click', () => {
-  if (!selectedMode) {
-    showToast('Veuillez sélectionner un mode de service', 'warning');
-    return;
-  }
-  
-  // Adapter le formulaire selon le mode
-  const adresseFields = document.getElementById('adresse-fields');
-  const adresseInputs = adresseFields.querySelectorAll('input');
-  const heureField = document.getElementById('heure-souhaitee-field');
-  const tableField = document.getElementById('table-field');
-  
-  // Reset
-  adresseFields.style.display = 'none';
-  heureField.style.display = 'none';
-  tableField.style.display = 'none';
-  adresseInputs.forEach(input => input.required = false);
-  
-  if (selectedMode === 'livraison') {
-    adresseFields.style.display = 'block';
-    adresseInputs.forEach(input => input.required = true);
-  } else if (selectedMode === 'emporter') {
-    heureField.style.display = 'block';
-  } else if (selectedMode === 'sur_place') {
-    tableField.style.display = 'block';
-  }
-  
-  showStep(2);
-});
-
-// ==========================================
-// Code Postal - Détection Zone
-// ==========================================
-document.getElementById('code-postal-input')?.addEventListener('input', (e) => {
-  const codePostal = e.target.value;
-  const zoneInfo = document.getElementById('zone-info');
-  
-  if (selectedMode !== 'livraison') return;
-  
-  const zone = zonesFraisLivraison.find(z => z.codes_postaux.includes(codePostal));
-  
-  if (zone) {
-    selectedZone = zone;
-    zoneInfo.textContent = `✓ ${zone.nom} - Frais: ${formatPrice(zone.frais)} - ${zone.temps_estime}`;
-    zoneInfo.classList.remove('text-error');
-    zoneInfo.classList.add('text-success');
-    updateSummary();
-  } else if (codePostal.length >= 4) {
-    selectedZone = null;
-    zoneInfo.textContent = '✗ Code postal hors zone de livraison';
-    zoneInfo.classList.remove('text-success');
-    zoneInfo.classList.add('text-error');
-    updateSummary();
-  } else {
-    zoneInfo.textContent = '';
-  }
-});
-
-// ==========================================
-// Étape 2 : Informations Client
-// ==========================================
-document.getElementById('btn-back-step-2')?.addEventListener('click', () => showStep(1));
-
-document.getElementById('btn-next-step-2')?.addEventListener('click', () => {
-  const form = document.getElementById('form-client');
-  if (!form.checkValidity()) {
-    form.reportValidity();
-    return;
-  }
-  
-  if (selectedMode === 'livraison' && !selectedZone) {
-    showToast('Veuillez entrer un code postal valide dans notre zone de livraison', 'error');
-    return;
-  }
-  
-  // Afficher les méthodes de paiement disponibles
-  renderPaymentMethods();
-  showStep(3);
-});
-
-// ==========================================
-// Étape 3 : Paiement
-// ==========================================
-document.getElementById('btn-back-step-3')?.addEventListener('click', () => showStep(2));
-
-document.getElementById('btn-confirm-order')?.addEventListener('click', async () => {
-  const btn = document.getElementById('btn-confirm-order');
-  btn.disabled = true;
-  btn.innerHTML = '<span class="loading loading-spinner loading-sm"></span> Envoi en cours...';
-  
-  try {
-    // Récupérer les valeurs depuis les radio buttons
-    const modeRadio = document.querySelector('input[name="mode_service"]:checked');
-    const paymentRadio = document.querySelector('input[name="payment_method"]:checked');
-    
-    if (!modeRadio || !paymentRadio) {
-      throw new Error('Informations manquantes');
-    }
-    
-    const finalMode = modeRadio.value;
-    const finalPaymentMethod = paymentRadio.value;
-    
-    // Récupérer les données du formulaire
-    const formData = new FormData(document.getElementById('form-client'));
-    const clientData = Object.fromEntries(formData);
-    
-    // Détecter le type d'appareil
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-    
-    // Préparer la commande
-    const orderData = {
-      type: finalMode,
-      client: {
-        nom: clientData.nom,
-        prenom: clientData.prenom,
-        email: clientData.email,
-        telephone: clientData.telephone,
-      },
-      articles: cart,
-      sous_total: cart.reduce((sum, item) => sum + (item.prix * item.quantite), 0),
-      notes: clientData.notes || '',
-      device_type: isMobile ? 'mobile' : 'desktop',
-      source: 'web',
-    };
-    
-    // Ajouter infos selon le mode
-    if (finalMode === 'livraison') {
-      orderData.client.adresse = {
-        rue: clientData.rue,
-        numero: clientData.numero,
-        code_postal: clientData.code_postal,
-        ville: clientData.ville,
-      };
-      orderData.frais_livraison = selectedZone.frais;
-      orderData.zone_livraison = selectedZone.id;
-      orderData.temps_estime = selectedZone.temps_estime;
-    } else if (finalMode === 'emporter') {
-      orderData.frais_livraison = 0;
-      orderData.heure_souhaitee = clientData.heure_souhaitee || null;
-    } else if (finalMode === 'sur_place') {
-      orderData.frais_livraison = 0;
-      orderData.numero_table = clientData.numero_table || null;
-    }
-    
-    orderData.prix_total = orderData.sous_total + (orderData.frais_livraison || 0);
-    
-    // Statut selon le mode de paiement
-    if (finalPaymentMethod === 'en_ligne') {
-      orderData.paiement = {
-        mode: 'en_ligne',
-        statut: 'en_attente_paiement',
-      };
-    } else {
-      orderData.paiement = {
-        mode: finalPaymentMethod,
-        statut: 'a_reception',
-      };
-    }
-    
-    console.log('📤 Envoi commande:', orderData);
-    
-    // ✅ Envoyer via api.ts
-    const result = await api.commandes.create(orderData);
-    
-    console.log('✅ Commande créée:', result);
-    
-    // Sauvegarder la commande pour la page de confirmation
-    localStorage.setItem('last_order', JSON.stringify(result));
-    
-    // Gestion selon le mode de paiement
-    if (finalPaymentMethod === 'en_ligne') {
-      // Ne pas vider le panier pour paiement Stripe
-      console.log('💳 Paiement en ligne - panier conservé');
-      window.location.href = '/stripe-checkout?order=' + result.id;
-    } else {
-      // Vider le panier pour les autres modes
-      localStorage.removeItem('cart');
-      window.dispatchEvent(new Event('cart-updated'));
-      console.log('✅ Panier vidé');
-      window.location.href = '/confirmation?order=' + result.id;
-    }
-    
-  } catch (error) {
-    console.error('❌ Erreur:', error);
-    showToast('Une erreur est survenue lors de l\'envoi de votre commande. Veuillez réessayer.', 'error');
-    btn.disabled = false;
-    btn.innerHTML = `
-      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-      </svg>
-      Confirmer la commande
-    `;
-  }
-});
-
-// ==========================================
-// Initialisation
-// ==========================================
-console.log('💳 Page Checkout chargée');
-
-loadConfig();
-loadCart();
+  document.addEventListener('astro:page-load', init);
+  init();
 </script>

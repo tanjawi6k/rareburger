@@ -1,414 +1,445 @@
 ---
 // src/pages/cart.astro
-// ============================================
-// 🛒 CMDOLA - Page Panier
-// ============================================
-
 import Navbar from '../components/Navbar.astro';
 import api from '../lib/api';
 import '../assets/app.css';
-import { formatInTimeZone } from 'date-fns-tz';
 
-const RESTAURANT_ID = import.meta.env.PUBLIC_DEFAULT_RESTAURANT_ID || 'rare-burger';
+// ─────────────────────────────────────────
+// Thème SSR
+// ─────────────────────────────────────────
+const VALID_THEMES: readonly string[] = [
+  'light','dark','cupcake','bumblebee','emerald','corporate',
+  'synthwave','retro','cyberpunk','valentine','halloween','garden',
+  'forest','aqua','lofi','pastel','fantasy','wireframe','black',
+  'luxury','dracula','cmyk','autumn','business','acid','lemonade',
+  'night','coffee','winter','dim','nord','sunset',
+];
 
-// ✅ Charger config et vérifier si ouvert (côté serveur)
-let config: any = {};
-let theme = 'light';
-let logoUrl = '/favicon.ico';
-let isOpen = false;
+const cookieTheme = Astro.cookies.get('theme')?.value;
+
+// ─────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────
+interface TimeSlot { debut: string; fin: string; }
+
+// ─────────────────────────────────────────
+// Données
+// ─────────────────────────────────────────
+let theme            = 'light';
+let logoUrl          = '/favicon.ico';
+let restaurantName   = 'CMDOLA';
+let restaurantTel    = '';
+let isOpen           = false;
+
+function timeToMin(t: string): number {
+  const [h, m] = t.split(':').map(Number);
+  return h * 60 + m;
+}
+
+const DAY_NAMES_FR: readonly string[] = ['dimanche','lundi','mardi','mercredi','jeudi','vendredi','samedi'];
 
 try {
-  config = await api.config.get();
-  theme = config.theme?.daisy || 'light';
-  logoUrl = config.theme?.logo ? api.images.getUrl(config.theme.logo) : '/favicon.ico';
-  
-  // ✅ Vérifier si restaurant ouvert
-  const TIMEZONE = 'Europe/Brussels';
-  const now = new Date();
-  
-  const currentDay = formatInTimeZone(now, TIMEZONE, 'EEEE').toLowerCase();
-  const currentTime = formatInTimeZone(now, TIMEZONE, 'HH:mm');
-  
-  const dayMap: Record<string, string> = {
-    'monday': 'lundi',
-    'tuesday': 'mardi', 
-    'wednesday': 'mercredi',
-    'thursday': 'jeudi',
-    'friday': 'vendredi',
-    'saturday': 'samedi',
-    'sunday': 'dimanche'
-  };
-  
-  const currentDayFr = dayMap[currentDay] || currentDay;
-  const currentSchedule = config.horaires?.[currentDayFr] || [];
-  
-  function timeToMinutes(time: string): number {
-    const [hours, minutes] = time.split(':').map(Number);
-    return hours * 60 + minutes;
-  }
-  
-  const currentMinutes = timeToMinutes(currentTime);
-  
-  isOpen = currentSchedule.some((plage: any) => {
-    const debutMinutes = timeToMinutes(plage.debut);
-    const finMinutes = timeToMinutes(plage.fin);
-    
-    if (finMinutes < debutMinutes) {
-      return currentMinutes >= debutMinutes || currentMinutes <= finMinutes;
-    } else {
-      return currentMinutes >= debutMinutes && currentMinutes <= finMinutes;
-    }
+  const configData = await api.config.get() as Record<string, any>;
+
+  const configTheme = (configData.theme as Record<string,string>|undefined)?.daisy;
+  theme = (cookieTheme && VALID_THEMES.includes(cookieTheme))
+    ? cookieTheme
+    : (configTheme && VALID_THEMES.includes(configTheme) ? configTheme : 'light');
+
+  const logoFile = (configData.theme as Record<string,string>|undefined)?.logo;
+  logoUrl        = logoFile ? api.images.getUrl(logoFile) : '/favicon.ico';
+  restaurantName = (configData.nom as string | undefined) ?? 'CMDOLA';
+  restaurantTel  = (configData.telephone as string | undefined) ?? '';
+
+  // Statut ouverture (même logique que menu.astro)
+  const now      = new Date();
+  const brux     = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Brussels' }));
+  const dayFr    = DAY_NAMES_FR[brux.getDay()] ?? 'lundi';
+  const timeStr  = `${String(brux.getHours()).padStart(2,'0')}:${String(brux.getMinutes()).padStart(2,'0')}`;
+  const nowMin   = timeToMin(timeStr);
+  const schedule = ((configData.horaires as Record<string, TimeSlot[]>|undefined)?.[dayFr]) ?? [];
+
+  isOpen = schedule.some(({ debut, fin }) => {
+    const d = timeToMin(debut), f = timeToMin(fin);
+    return f < d ? nowMin >= d || nowMin <= f : nowMin >= d && nowMin <= f;
   });
-  
-} catch (error) {
-  console.error('❌ Erreur config:', error);
+
+} catch (err) {
+  console.error('Erreur config cart:', err);
 }
+
+const apiBaseUrl: string = import.meta.env.PUBLIC_API_URL ?? 'http://127.0.0.1:5000/api';
 ---
 
 <!DOCTYPE html>
 <html lang="fr" data-theme={theme}>
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
-  <title>Panier - CMDOLA</title>
-  <link rel="icon" type="image/png" href={logoUrl}>
+  <meta name="api-url" content={apiBaseUrl} />
+  <title>Panier — {restaurantName}</title>
+  <link rel="icon" type="image/png" href={logoUrl} />
+
+  <!-- Anti-FOUC thème -->
+  <script is:inline>
+    (function(){
+      var valid=['light','dark','cupcake','bumblebee','emerald','corporate',
+        'synthwave','retro','cyberpunk','valentine','halloween','garden','forest',
+        'aqua','lofi','pastel','fantasy','wireframe','black','luxury','dracula',
+        'cmyk','autumn','business','acid','lemonade','night','coffee','winter',
+        'dim','nord','sunset'];
+      var c=document.cookie.split(';').find(function(x){return x.trim().startsWith('theme=');});
+      var t=c?decodeURIComponent(c.split('=')[1].trim()):null;
+      if(t&&valid.indexOf(t)!==-1) document.documentElement.setAttribute('data-theme',t);
+    }());
+  </script>
 </head>
 
-<body class="bg-base-200 min-h-screen">
-  
-  <!-- Navigation -->
-  <Navbar />
-  
-  <!-- Alert si restaurant fermé -->
-  {!isOpen && (
-    <div class="container mx-auto px-4 mt-4">
-      <div class="alert alert-warning shadow-lg">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 shrink-0 stroke-current" fill="none" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+<body class="bg-base-200" style="min-height:100dvh;min-height:100vh;">
+
+  <header class="sticky top-0 z-40">
+    <Navbar
+      restaurantName={restaurantName}
+      logoUrl={logoUrl}
+      activePage="cart"
+    />
+  </header>
+
+  <main class="container mx-auto px-4 py-6 max-w-5xl">
+
+    <!-- Bannière fermé -->
+    {!isOpen && (
+      <div class="alert alert-warning rounded-2xl mb-5" role="alert">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
         </svg>
         <div>
-          <h3 class="font-bold">Restaurant actuellement fermé</h3>
-          <div class="text-sm">Vous pouvez préparer votre panier, mais la commande ne pourra être validée qu'à notre réouverture.</div>
+          <p class="font-bold text-sm">Restaurant actuellement fermé</p>
+          <p class="text-xs opacity-80">Vous pouvez préparer votre panier, la commande sera disponible à la réouverture.</p>
         </div>
       </div>
-    </div>
-  )}
-  
-  <!-- Contenu panier -->
-  <div class="container mx-auto px-4 py-8">
-    
-    <!-- Titre -->
-    <div class="flex items-center justify-between mb-6">
-      <h1 class="text-3xl font-bold">Mon Panier</h1>
-      <button id="clear-cart-btn" class="btn btn-ghost btn-sm text-error">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+    )}
+
+    <!-- En-tête -->
+    <div class="flex items-center justify-between mb-5">
+      <h1 class="text-2xl sm:text-3xl font-bold text-base-content">Mon panier</h1>
+      <button
+        id="clear-cart-btn"
+        class="btn btn-ghost btn-sm text-error gap-1.5"
+        aria-label="Vider le panier"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
         </svg>
-        Vider le panier
+        Vider
       </button>
     </div>
 
-    <!-- Grid 2 colonnes : articles + résumé -->
-    <div class="grid lg:grid-cols-3 gap-6">
-      
-      <!-- Articles (2/3) -->
-      <div class="lg:col-span-2">
-        <div id="cart-items" class="space-y-4">
-          <!-- Rempli par JavaScript -->
-          <div class="flex justify-center py-12">
-            <span class="loading loading-spinner loading-lg"></span>
-          </div>
+    <!-- Layout 2 colonnes -->
+    <div class="grid lg:grid-cols-3 gap-5">
+
+      <!-- Articles -->
+      <div class="lg:col-span-2 space-y-3" id="cart-items">
+        <!-- Spinner initial -->
+        <div class="flex justify-center py-12" id="cart-loading">
+          <span class="loading loading-spinner loading-lg text-primary"></span>
         </div>
-        
-        <!-- Message panier vide -->
-        <div id="empty-cart" class="card bg-base-100 shadow-sm" style="display: none;">
-          <div class="card-body text-center py-12">
-            <div class="text-6xl mb-4">🛒</div>
-            <h2 class="text-2xl font-bold mb-2">Votre panier est vide</h2>
-            <p class="text-base-content/60 mb-6">Ajoutez des produits pour commencer</p>
-            <a href="/menu" class="btn btn-primary">
+      </div>
+
+      <!-- Panier vide (caché par défaut) -->
+      <div id="empty-cart" class="lg:col-span-2 hidden">
+        <div class="card bg-base-100 shadow-sm">
+          <div class="card-body items-center text-center py-14">
+            <span class="text-6xl mb-3" aria-hidden="true">🛒</span>
+            <h2 class="card-title text-xl">Votre panier est vide</h2>
+            <p class="text-base-content/60 text-sm mt-1">Ajoutez des produits depuis le menu</p>
+            <a href="/menu" class="btn btn-primary mt-4 gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7"/>
+              </svg>
               Voir le menu
             </a>
           </div>
         </div>
       </div>
 
-      <!-- Résumé commande (1/3) -->
-      <div class="lg:col-span-1">
-        <div class="card bg-base-100 shadow-sm sticky top-4">
-          <div class="card-body">
-            <h2 class="card-title">Résumé</h2>
-            <div class="divider my-2"></div>
-            
-            <!-- Détails -->
-            <div class="space-y-3">
-              <div class="flex justify-between">
-                <span>Sous-total</span>
-                <span id="subtotal" class="font-semibold">0.00€</span>
-              </div>
-              
-              <div class="divider my-2"></div>
-              
-              <div class="flex justify-between text-lg">
-                <span class="font-bold">Total</span>
-                <span id="total" class="font-bold text-primary">0.00€</span>
-              </div>
-              
-              <div class="alert alert-info">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <span class="text-sm">Les frais seront calculés au checkout</span>
-              </div>
+      <!-- Résumé sticky -->
+      <div class="lg:col-span-1" id="summary-col">
+        <div class="card bg-base-100 shadow-sm sticky top-20">
+          <div class="card-body gap-3">
+            <h2 class="card-title text-lg">Résumé</h2>
+            <div class="divider my-0"></div>
+
+            <div class="flex justify-between text-sm">
+              <span class="text-base-content/70">Sous-total</span>
+              <span class="font-semibold" id="subtotal">0,00 €</span>
             </div>
-            
-            <div class="divider my-2"></div>
-            
-            <!-- Bouton commander -->
-            <button id="checkout-btn" class="btn btn-primary btn-block" data-is-open={isOpen}>
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+
+            <div class="alert alert-info py-2 text-xs rounded-xl">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+              Frais de livraison calculés au checkout
+            </div>
+
+            <div class="divider my-0"></div>
+
+            <div class="flex justify-between items-baseline">
+              <span class="font-bold text-base">Total</span>
+              <span class="font-bold text-primary text-xl tabular-nums" id="total">0,00 €</span>
+            </div>
+
+            <!-- Bouton commander — isOpen passé via data-attribute, pas define:vars -->
+            <button
+              id="checkout-btn"
+              class="btn btn-primary btn-block gap-2 mt-1"
+              data-is-open={String(isOpen)}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
               </svg>
               Commander
             </button>
           </div>
         </div>
       </div>
-    </div>
-  </div>
 
-  <!-- Toast container -->
-  <div id="toast-container" class="toast toast-top toast-end z-50"></div>
+    </div>
+  </main>
+
+  <!-- Modal confirmation vider panier (DaisyUI — remplace confirm()) -->
+  <dialog id="confirm-clear-modal" class="modal modal-bottom sm:modal-middle">
+    <div class="modal-box">
+      <h3 class="font-bold text-lg">Vider le panier ?</h3>
+      <p class="py-3 text-base-content/70 text-sm">Tous vos articles seront supprimés.</p>
+      <div class="modal-action">
+        <form method="dialog">
+          <button class="btn btn-ghost btn-sm">Annuler</button>
+        </form>
+        <button id="confirm-clear-yes" class="btn btn-error btn-sm">Vider</button>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop">
+      <button>fermer</button>
+    </form>
+  </dialog>
+
+  <!-- Toasts -->
+  <div id="toast-container" class="toast toast-top toast-end z-50" aria-live="polite"></div>
 
 </body>
 </html>
 
-<script define:vars={{ isOpen }}>
-  // ============================================
-  // 🛒 Gestion du panier - Script consolidé
-  // ============================================
-  
-  let cart = [];
+<style>
+  /* Touch targets */
+  @media (pointer: coarse) {
+    button, a { min-height: 44px; }
+  }
+  /* Prevent iOS zoom on inputs */
+  @media (max-width: 640px) {
+    input, select, textarea { font-size: 16px !important; }
+  }
+</style>
 
-  // Formater le prix
-  function formatPrice(price) {
-    return new Intl.NumberFormat('fr-BE', {
-      style: 'currency',
-      currency: 'EUR',
-    }).format(price);
+<!--
+  Script bundlé TypeScript — PAS de define:vars.
+  isOpen est lu depuis data-is-open sur le bouton checkout.
+-->
+<script>
+  // ── Types ─────────────────────────────────────
+  interface CartItem {
+    id: string;
+    nom: string;
+    prix: number;
+    quantite: number;
+    supplements?: { name: string }[];
+    removed_ingredients?: string[];
+    choices_selected?: { option_name: string; price_modifier: number }[];
   }
 
-  // Charger le panier
-  function loadCart() {
-    cart = JSON.parse(localStorage.getItem('cart') || '[]');
-    renderCart();
-    updateSummary();
+  // ── Helpers ───────────────────────────────────
+  const fmt = (n: number) =>
+    new Intl.NumberFormat('fr-BE', { style: 'currency', currency: 'EUR' }).format(n);
+
+  function esc(str: unknown): string {
+    const d = document.createElement('div');
+    d.textContent = String(str ?? '');
+    return d.innerHTML;
   }
 
-  // Afficher les articles
-  function renderCart() {
-    const cartItems = document.getElementById('cart-items');
-    const emptyCart = document.getElementById('empty-cart');
-    
+  function showToast(message: string, type: 'info'|'success'|'warning'|'error' = 'info') {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+    const el = document.createElement('div');
+    el.className = `alert alert-${type} shadow-md text-sm py-2 px-4 rounded-xl`;
+    el.textContent = message;
+    container.appendChild(el);
+    setTimeout(() => el.remove(), 3500);
+  }
+
+  // ── Panier ────────────────────────────────────
+  function getCart(): CartItem[] {
+    try { return JSON.parse(localStorage.getItem('cart') ?? '[]'); }
+    catch { return []; }
+  }
+
+  function saveCart(cart: CartItem[]) {
+    localStorage.setItem('cart', JSON.stringify(cart));
+    window.dispatchEvent(new CustomEvent('cart-updated'));
+    renderAll();
+  }
+
+  // ── Rendu ─────────────────────────────────────
+  function renderAll() {
+    const cart       = getCart();
+    const itemsEl    = document.getElementById('cart-items')!;
+    const emptyEl    = document.getElementById('empty-cart')!;
+    const summaryEl  = document.getElementById('summary-col')!;
+    const loadingEl  = document.getElementById('cart-loading');
+
+    loadingEl?.remove();
+
     if (cart.length === 0) {
-      cartItems.style.display = 'none';
-      emptyCart.style.display = 'block';
+      itemsEl.classList.add('hidden');
+      emptyEl.classList.remove('hidden');
+      summaryEl.classList.add('hidden');
+      document.getElementById('subtotal')!.textContent = fmt(0);
+      document.getElementById('total')!.textContent    = fmt(0);
       return;
     }
-    
-    cartItems.style.display = 'block';
-    emptyCart.style.display = 'none';
-    
-    cartItems.innerHTML = cart.map((item, index) => `
-      <div class="card bg-base-100 shadow-sm">
+
+    itemsEl.classList.remove('hidden');
+    emptyEl.classList.add('hidden');
+    summaryEl.classList.remove('hidden');
+
+    // Vider et reconstruire les cartes
+    // On garde les éléments existants puis on ajoute les nouveaux
+    itemsEl.innerHTML = '';
+
+    cart.forEach((item, idx) => {
+      const card = document.createElement('div');
+      card.className = 'card bg-base-100 shadow-sm';
+
+      // Suppléments
+      const suppHtml = item.supplements?.length
+        ? `<p class="text-xs text-base-content/60 mt-1"><span class="font-medium">Avec :</span> ${item.supplements.map(s => esc(s.name)).join(', ')}</p>`
+        : '';
+
+      // Ingrédients retirés
+      const removedHtml = item.removed_ingredients?.length
+        ? `<p class="text-xs text-base-content/60 mt-0.5"><span class="font-medium">Sans :</span> ${item.removed_ingredients.map(i => esc(i)).join(', ')}</p>`
+        : '';
+
+      // Choix
+      const choicesHtml = item.choices_selected?.length
+        ? `<div class="flex flex-wrap gap-1 mt-1">${item.choices_selected.map(c =>
+            `<span class="badge badge-primary badge-xs">${esc(c.option_name)}${c.price_modifier ? ` +${c.price_modifier.toFixed(2)}€` : ''}</span>`
+          ).join('')}</div>`
+        : '';
+
+      card.innerHTML = `
         <div class="card-body p-4">
-          <div class="flex gap-4">
-            
-            <!-- Infos produit -->
-            <div class="flex-1">
-              <h3 class="font-bold text-lg">${escapeHtml(item.nom)}</h3>
-
-
-              <!-- ✅ AJOUTER : Choix sélectionnés -->
-              ${item.choices_selected && item.choices_selected.length > 0 ? `
-                <div class="flex flex-wrap gap-2 mt-2">
-                  ${item.choices_selected.map(choice => `
-                    <span class="badge badge-primary badge-sm">
-                      ${escapeHtml(choice.option_name)}
-                      ${choice.price_modifier !== 0 ? ` (+${choice.price_modifier.toFixed(2)}€)` : ''}
-                    </span>
-                  `).join('')}
-                </div>
-              ` : ''}
-              
-              <!-- Suppléments -->
-              ${item.supplements && item.supplements.length > 0 ? `
-                <div class="text-sm text-base-content/70 mt-1">
-                  <span class="font-semibold">Avec:</span> ${item.supplements.map(s => escapeHtml(s.name)).join(', ')}
-                </div>
-              ` : ''}
-              
-              <!-- Ingrédients retirés -->
-              ${item.removed_ingredients && item.removed_ingredients.length > 0 ? `
-                <div class="text-sm text-base-content/70 mt-1">
-                  <span class="font-semibold">Sans:</span> ${item.removed_ingredients.map(i => escapeHtml(i)).join(', ')}
-                </div>
-              ` : ''}
-              
-              <!-- Prix unitaire -->
-              <div class="text-sm text-base-content/60 mt-2">
-                ${formatPrice(item.prix)} / unité
-              </div>
+          <div class="flex gap-3">
+            <div class="flex-1 min-w-0">
+              <h3 class="font-bold text-base leading-snug">${esc(item.nom)}</h3>
+              ${choicesHtml}${suppHtml}${removedHtml}
+              <p class="text-xs text-base-content/50 mt-1.5">${fmt(item.prix)} / unité</p>
             </div>
-            
-            <!-- Quantité et actions -->
-            <div class="flex flex-col items-end justify-between">
-              <!-- Prix total -->
-              <div class="text-lg font-bold text-primary">
-                ${formatPrice(item.prix * item.quantite)}
-              </div>
-              
-              <!-- Contrôles quantité -->
-              <div class="flex items-center gap-2">
-                <button class="btn btn-sm btn-circle btn-decrease" data-index="${index}">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4" />
-                  </svg>
-                </button>
-                <span class="font-semibold w-8 text-center">${item.quantite}</span>
-                <button class="btn btn-sm btn-circle btn-increase" data-index="${index}">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-                  </svg>
-                </button>
-                <button class="btn btn-sm btn-ghost btn-circle text-error btn-remove" data-index="${index}">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            <div class="flex flex-col items-end justify-between shrink-0">
+              <span class="font-bold text-primary tabular-nums">${fmt(item.prix * item.quantite)}</span>
+              <div class="flex items-center gap-1 mt-2">
+                <button
+                  class="btn btn-xs btn-circle btn-ghost"
+                  data-action="decrease" data-idx="${idx}"
+                  aria-label="Diminuer la quantité"
+                >−</button>
+                <span class="font-semibold text-sm w-6 text-center tabular-nums">${item.quantite}</span>
+                <button
+                  class="btn btn-xs btn-circle btn-ghost"
+                  data-action="increase" data-idx="${idx}"
+                  aria-label="Augmenter la quantité"
+                >+</button>
+                <button
+                  class="btn btn-xs btn-circle btn-ghost text-error ml-1"
+                  data-action="remove" data-idx="${idx}"
+                  aria-label="Supprimer l'article"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
                   </svg>
                 </button>
               </div>
             </div>
           </div>
         </div>
-      </div>
-    `).join('');
-    
-    // ✅ Event delegation - Attacher les événements après le rendu
-    attachCartEvents();
-  }
-
-  // ✅ Échapper le HTML pour éviter les injections XSS
-  function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-  }
-
-  // ✅ Event delegation - Propre et performant
-  function attachCartEvents() {
-    // Boutons diminuer quantité
-    document.querySelectorAll('.btn-decrease').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        const index = parseInt(btn.dataset.index);
-        changeQuantity(index, -1);
-      });
+      `;
+      itemsEl.appendChild(card);
     });
-    
-    // Boutons augmenter quantité
-    document.querySelectorAll('.btn-increase').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        const index = parseInt(btn.dataset.index);
-        changeQuantity(index, 1);
-      });
-    });
-    
-    // Boutons supprimer
-    document.querySelectorAll('.btn-remove').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        const index = parseInt(btn.dataset.index);
-        removeItem(index);
-      });
-    });
+
+    // Totaux
+    const subtotal = cart.reduce((s, i) => s + i.prix * i.quantite, 0);
+    document.getElementById('subtotal')!.textContent = fmt(subtotal);
+    document.getElementById('total')!.textContent    = fmt(subtotal);
   }
 
-  // Mettre à jour le résumé
-  function updateSummary() {
-    const subtotal = cart.reduce((sum, item) => sum + (item.prix * item.quantite), 0);
-    
-    document.getElementById('subtotal').textContent = formatPrice(subtotal);
-    document.getElementById('total').textContent = formatPrice(subtotal);
-  }
+  // ── Event delegation sur la liste ─────────────
+  document.getElementById('cart-items')?.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-action]');
+    if (!btn) return;
 
-  // Changer quantité
-  function changeQuantity(index, delta) {
-    cart[index].quantite += delta;
-    
-    if (cart[index].quantite <= 0) {
-      cart.splice(index, 1);
-    }
-    
-    saveCart();
-  }
+    const action = btn.dataset.action!;
+    const idx    = parseInt(btn.dataset.idx ?? '0');
+    const cart   = getCart();
 
-  // Supprimer article
-  function removeItem(index) {
-    cart.splice(index, 1);
-    saveCart();
-  }
-
-  // Vider le panier
-  document.getElementById('clear-cart-btn')?.addEventListener('click', () => {
-    if (confirm('Êtes-vous sûr de vouloir vider le panier ?')) {
-      cart = [];
-      saveCart();
+    if (action === 'increase') {
+      cart[idx].quantite++;
+      saveCart(cart);
+    } else if (action === 'decrease') {
+      cart[idx].quantite--;
+      if (cart[idx].quantite <= 0) cart.splice(idx, 1);
+      saveCart(cart);
+    } else if (action === 'remove') {
+      cart.splice(idx, 1);
+      saveCart(cart);
     }
   });
 
-  // Sauvegarder et recharger
-  function saveCart() {
-    localStorage.setItem('cart', JSON.stringify(cart));
-    window.dispatchEvent(new Event('cart-updated'));
-    loadCart();
-  }
+  // ── Vider le panier — modal DaisyUI ──────────
+  const confirmModal = document.getElementById('confirm-clear-modal') as HTMLDialogElement;
 
-  // ✅ Bouton commander avec vérification ouverture
+  document.getElementById('clear-cart-btn')?.addEventListener('click', () => {
+    confirmModal?.showModal();
+  });
+
+  document.getElementById('confirm-clear-yes')?.addEventListener('click', () => {
+    confirmModal?.close();
+    saveCart([]);
+    showToast('Panier vidé', 'info');
+  });
+
+  // ── Checkout ──────────────────────────────────
   document.getElementById('checkout-btn')?.addEventListener('click', () => {
-    // Vérifier qu'il y a des articles
+    const cart = getCart();
     if (cart.length === 0) {
       showToast('Votre panier est vide', 'warning');
       return;
     }
-    
-    // ✅ Vérifier si le restaurant est ouvert
+
+    // Lire isOpen depuis le data-attribute (pas de define:vars)
+    const btn    = document.getElementById('checkout-btn') as HTMLButtonElement;
+    const isOpen = btn.dataset.isOpen === 'true';
+
     if (!isOpen) {
-      showToast('Le restaurant est actuellement fermé. Les commandes seront disponibles lors de notre prochaine ouverture.', 'error');
+      showToast('Le restaurant est actuellement fermé', 'error');
       return;
     }
-    
-    // Redirection vers checkout
+
     window.location.href = '/checkout';
   });
 
-  // Fonction toast
-  function showToast(message, type = 'info') {
-    const toast = document.createElement('div');
-    toast.className = `alert alert-${type} shadow-lg`;
-    toast.innerHTML = `
-      <div>
-        <span>${message}</span>
-      </div>
-    `;
-    
-    const container = document.getElementById('toast-container');
-    container.appendChild(toast);
-    
-    setTimeout(() => {
-      toast.remove();
-    }, 3000);
-  }
-
-  // Charger au démarrage
-  document.addEventListener('astro:page-load', loadCart);
-  loadCart();
+  // ── Init ──────────────────────────────────────
+  document.addEventListener('astro:page-load', renderAll);
+  window.addEventListener('cart-updated', renderAll);
+  renderAll();
 </script>

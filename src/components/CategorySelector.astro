@@ -1,249 +1,182 @@
 ---
 // src/components/CategorySelector.astro
-// ============================================
-// 📂 CMDOLA - Sélecteur de catégories horizontal
-// ============================================
+// Reçoit les catégories en prop — zéro fetch autonome
 
-import api from '../lib/api'; // ✅ Import par défaut (plus propre)
-import "../assets/app.css";
+import '../assets/app.css';
+
+interface Category {
+  id: string;
+  name: string;
+  icon?: string;
+}
 
 interface Props {
+  categories?: Category[];
   selectedCategory?: string;
 }
 
 const {
+  categories    = [],
   selectedCategory = 'all',
 } = Astro.props;
 
-// Catégories par défaut (fallback)
-const defaultCategories = [
-  { id: 'entrees', name: 'Entrées', icon: '🥗' },
-  { id: 'plats', name: 'Plats', icon: '🍽️' },
-  { id: 'pizzas', name: 'Pizzas', icon: '🍕' },
-  { id: 'burgers', name: 'Burgers', icon: '🍔' },
-  { id: 'boissons', name: 'Boissons', icon: '🥤' },
-  { id: 'desserts', name: 'Desserts', icon: '🍰' },
-];
-
-// Récupérer les catégories depuis l'API
-let categories: Array<{ id: string; name: string; icon: string }> = [];
-
-try {
-  // ✅ Utilise déjà api.ts correctement (pas de restaurant_id nécessaire)
-  const menu = await api.menu.get();
-  categories = menu.categories || [];
-  
-  // Si pas de catégories, utiliser les catégories par défaut
-  if (categories.length === 0) {
-    console.warn('⚠️  Aucune catégorie depuis l\'API, utilisation des catégories par défaut');
-    categories = defaultCategories;
-  }
-} catch (error) {
-  console.error('❌ Erreur chargement catégories:', error);
-  // ✅ Fallback sur les catégories par défaut en cas d'erreur
-  categories = defaultCategories;
-}
-
-// Ajouter "Tout" au début
-const allCategories = [
+const allCategories: Category[] = [
   { id: 'all', name: 'Tout', icon: '🍴' },
   ...categories,
 ];
 ---
 
-<!-- Container principal avec scroll horizontal -->
 <div class="w-full bg-base-100 border-b border-base-300">
-  <div class="container mx-auto px-4 py-4">
-    
-    <!-- Conteneur scrollable horizontal -->
-    <div 
-      class="flex gap-3 overflow-x-auto scrollbar-hide snap-x snap-mandatory"
-      id="category-scroll"
-    >
-      {allCategories.map((category) => (
-        <button
-          data-category={category.id}
-          class={`
-            btn btn-lg flex-shrink-0 snap-start
-            ${selectedCategory === category.id ? 'btn-primary' : 'btn-ghost'}
-            flex flex-col items-center justify-center
-            min-w-[100px] h-auto py-3 px-4
-            hover:btn-primary hover:scale-105
-            transition-all duration-200
-          `}
-        >
-          <!-- Icône -->
-          <span class="text-3xl mb-1" aria-hidden="true">
-            {category.icon}
+  <div
+    class="flex gap-2 overflow-x-auto py-3 px-4 scrollbar-hide snap-x snap-mandatory"
+    id="category-scroll"
+    role="tablist"
+    aria-label="Catégories du menu"
+  >
+    {allCategories.map((cat) => (
+      <button
+        role="tab"
+        data-category={cat.id}
+        aria-selected={selectedCategory === cat.id ? 'true' : 'false'}
+        class:list={[
+          'category-btn btn btn-sm flex-shrink-0 snap-start',
+          'flex flex-col items-center justify-center gap-1',
+          'min-w-[80px] sm:min-w-[100px] lg:min-w-[120px]',
+          'h-auto py-2 px-3',
+          selectedCategory === cat.id ? 'btn-primary' : 'btn-ghost',
+        ]}
+      >
+        {cat.icon && (
+          <span class="text-2xl sm:text-3xl leading-none" aria-hidden="true">
+            {cat.icon}
           </span>
-          
-          <!-- Nom -->
-          <span class="text-xs font-medium whitespace-nowrap">
-            {category.name}
-          </span>
-        </button>
-      ))}
-    </div>
-
+        )}
+        <span class="text-xs font-medium whitespace-nowrap leading-none">
+          {cat.name}
+        </span>
+      </button>
+    ))}
   </div>
 </div>
 
 <style>
-  /* Masquer la scrollbar mais garder le scroll */
+  /* Scrollbar cachée */
   .scrollbar-hide {
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
-  
-  .scrollbar-hide::-webkit-scrollbar {
-    display: none;
+  .scrollbar-hide::-webkit-scrollbar { display: none; }
+
+  /* Bouton catégorie */
+  .category-btn {
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
   }
 
-  /* Smooth scroll */
-  #category-scroll {
-    scroll-behavior: smooth;
-  }
-
-  /* Effet au hover */
-  button[data-category]:hover {
+  .category-btn:hover {
     transform: translateY(-2px);
   }
 
-  /* Animation pour la catégorie active */
-  button[data-category].btn-primary {
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 
-                0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  /* Active : ombre DaisyUI-aware */
+  .category-btn.btn-primary {
+    box-shadow: 0 4px 12px oklch(var(--p) / 0.3);
   }
 
-  /* Responsive - Ajuster la taille des boutons sur petit écran */
-  @media (max-width: 640px) {
-    button[data-category] {
-      min-width: 85px;
-      padding: 0.75rem 0.5rem;
-    }
-    
-    button[data-category] span:first-child {
-      font-size: 2rem;
-    }
+  /* Touch : pas de translateY, feedback scale */
+  @media (hover: none) {
+    .category-btn:hover { transform: none; }
+    .category-btn:active { transform: scale(0.95); }
   }
 
-  /* Responsive - Plus d'espace sur grand écran */
-  @media (min-width: 1024px) {
-    button[data-category] {
-      min-width: 120px;
-    }
-  }
+  /* Drag-to-scroll curseur */
+  #category-scroll.is-dragging { cursor: grabbing; }
 </style>
 
 <script>
-  // 🎯 Gestion côté client de la sélection de catégorie
-  
-  interface CategoryChangeEvent extends CustomEvent {
-    detail: {
-      categoryId: string;
-      categoryName: string;
-    };
-  }
+  // ════════════════════════════════════════════
+  //  CategorySelector
+  //  - Sélection de catégorie → CustomEvent
+  //  - Drag-to-scroll souris
+  //  - PAS de restauration localStorage au load
+  //    (le filtre initial est géré par le SSR)
+  // ════════════════════════════════════════════
 
-  // Fonction pour initialiser les boutons
-  function initCategoryButtons() {
-    const buttons = document.querySelectorAll('button[data-category]');
-    
-    buttons.forEach((button) => {
-      button.addEventListener('click', function(this: HTMLButtonElement) {
-        const categoryId = this.dataset.category;
+  function init() {
+    const scroll  = document.getElementById('category-scroll');
+    if (!scroll) return;
+
+    const buttons = scroll.querySelectorAll<HTMLButtonElement>('.category-btn');
+
+    // ── Sélection ──────────────────────────────
+    buttons.forEach(btn => {
+      // Éviter le double-bind (View Transitions)
+      if (btn.dataset.bound) return;
+      btn.dataset.bound = '1';
+
+      btn.addEventListener('click', () => {
+        const categoryId = btn.dataset.category;
         if (!categoryId) return;
 
-        // Retirer la classe active de tous les boutons
-        buttons.forEach((btn) => {
-          btn.classList.remove('btn-primary');
-          btn.classList.add('btn-ghost');
+        // Mettre à jour les états visuels + aria
+        buttons.forEach(b => {
+          b.classList.replace('btn-primary', 'btn-ghost');
+          b.setAttribute('aria-selected', 'false');
         });
+        btn.classList.replace('btn-ghost', 'btn-primary');
+        btn.setAttribute('aria-selected', 'true');
 
-        // Ajouter la classe active au bouton cliqué
-        this.classList.remove('btn-ghost');
-        this.classList.add('btn-primary');
+        // Sauvegarder la sélection
+        try { localStorage.setItem('selectedCategory', categoryId); } catch(_) {}
 
-        // Trouver le nom de la catégorie
-        const categoryName = this.querySelector('span:last-child')?.textContent || '';
+        // Émettre l'événement pour ProductGrid
+        document.dispatchEvent(
+          new CustomEvent('category-changed', {
+            detail: { categoryId },
+            bubbles: true,
+          })
+        );
 
-        // Émettre un événement personnalisé
-        const event: CategoryChangeEvent = new CustomEvent('category-changed', {
-          detail: {
-            categoryId,
-            categoryName,
-          },
-          bubbles: true,
-        }) as CategoryChangeEvent;
-        
-        document.dispatchEvent(event);
-
-        // Sauvegarder dans localStorage
-        localStorage.setItem('selectedCategory', categoryId);
-
-        // Log pour debug
-        console.log('✅ Catégorie sélectionnée:', categoryId, categoryName);
+        // Scroll pour centrer le bouton actif (mobile)
+        btn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
       });
     });
 
-    // Restaurer la catégorie depuis localStorage au chargement
-    const savedCategory = localStorage.getItem('selectedCategory');
-    if (savedCategory) {
-      const savedButton = document.querySelector(`button[data-category="${savedCategory}"]`);
-      if (savedButton) {
-        buttons.forEach((btn) => {
-          btn.classList.remove('btn-primary');
-          btn.classList.add('btn-ghost');
-        });
-        savedButton.classList.remove('btn-ghost');
-        savedButton.classList.add('btn-primary');
+    // ── Drag-to-scroll (souris uniquement) ─────
+    let isDragging  = false;
+    let startX      = 0;
+    let scrollStart = 0;
+    let didDrag     = false;
+
+    scroll.addEventListener('mousedown', e => {
+      isDragging  = true;
+      didDrag     = false;
+      startX      = e.pageX - scroll.offsetLeft;
+      scrollStart = scroll.scrollLeft;
+      scroll.classList.add('is-dragging');
+    });
+
+    window.addEventListener('mouseup', () => {
+      isDragging = false;
+      scroll.classList.remove('is-dragging');
+    });
+
+    scroll.addEventListener('mousemove', e => {
+      if (!isDragging) return;
+      e.preventDefault();
+      const x    = e.pageX - scroll.offsetLeft;
+      const walk = (x - startX) * 1.5;
+      if (Math.abs(walk) > 4) didDrag = true;
+      scroll.scrollLeft = scrollStart - walk;
+    });
+
+    // Annuler le click si c'était un drag
+    scroll.addEventListener('click', e => {
+      if (didDrag) {
+        e.stopPropagation();
+        didDrag = false;
       }
-    }
+    }, true);
   }
 
-  // Initialiser au chargement
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initCategoryButtons);
-  } else {
-    initCategoryButtons();
-  }
-
-  // Support pour Astro View Transitions
-  document.addEventListener('astro:page-load', initCategoryButtons);
-
-  // Support du swipe tactile pour améliorer l'expérience mobile
-  if (typeof window !== 'undefined') {
-    const scrollContainer = document.getElementById('category-scroll');
-    
-    if (scrollContainer) {
-      let isDown = false;
-      let startX: number;
-      let scrollLeft: number;
-
-      scrollContainer.addEventListener('mousedown', (e) => {
-        isDown = true;
-        scrollContainer.style.cursor = 'grabbing';
-        startX = e.pageX - scrollContainer.offsetLeft;
-        scrollLeft = scrollContainer.scrollLeft;
-      });
-
-      scrollContainer.addEventListener('mouseleave', () => {
-        isDown = false;
-        scrollContainer.style.cursor = 'grab';
-      });
-
-      scrollContainer.addEventListener('mouseup', () => {
-        isDown = false;
-        scrollContainer.style.cursor = 'grab';
-      });
-
-      scrollContainer.addEventListener('mousemove', (e) => {
-        if (!isDown) return;
-        e.preventDefault();
-        const x = e.pageX - scrollContainer.offsetLeft;
-        const walk = (x - startX) * 2;
-        scrollContainer.scrollLeft = scrollLeft - walk;
-      });
-    }
-  }
+  document.addEventListener('astro:page-load', init);
+  init();
 </script>

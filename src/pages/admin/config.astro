@@ -1,834 +1,787 @@
 ---
 // src/pages/admin/config.astro
 import AdminLayout from '../../layouts/AdminLayout.astro';
-
 export const prerender = false;
 
-const RESTAURANT_ID = import.meta.env.PUBLIC_DEFAULT_RESTAURANT_ID || 'rare-burger';
+const user = Astro.locals.user;
+if (!user?.roles.includes('admin')) return Astro.redirect('/login');
+
+const apiBaseUrl: string = import.meta.env.PUBLIC_API_URL ?? 'http://127.0.0.1:5000/api';
 ---
 
 <AdminLayout title="Configuration">
-  
+
   <div class="mb-6">
-    <h1 class="text-3xl font-bold">Configuration du restaurant</h1>
-    <p class="text-base-content/60">Gérez tous les paramètres de votre restaurant</p>
+    <h1 class="text-3xl font-bold">Configuration</h1>
+    <p class="text-base-content/60">Paramètres de votre restaurant</p>
   </div>
 
   <!-- Loader -->
   <div id="loader" class="flex justify-center py-20">
-    <span class="loading loading-spinner loading-lg"></span>
+    <span class="loading loading-spinner loading-lg text-primary"></span>
   </div>
 
   <!-- Contenu -->
   <div id="configContent" class="hidden">
 
     <!-- Tabs -->
-    <div role="tablist" class="tabs tabs-boxed mb-6">
-      <a role="tab" class="tab tab-active" id="tabInfos">Informations</a>
-      <a role="tab" class="tab" id="tabHoraires">Horaires</a>
-      <a role="tab" class="tab" id="tabServices">Services</a>
-      <a role="tab" class="tab" id="tabPaiements">Paiements</a>
-      <a role="tab" class="tab" id="tabEmployes">Employés</a>
-      <a role="tab" class="tab" id="tabTheme">Thème</a>
-      <a role="tab" class="tab" id="tabSecurite">Sécurité</a>
+    <div role="tablist" class="tabs tabs-boxed mb-6 flex-wrap">
+      <button role="tab" class="tab tab-active" data-tab="Infos">Informations</button>
+      <button role="tab" class="tab" data-tab="Horaires">Horaires</button>
+      <button role="tab" class="tab" data-tab="Services">Services</button>
+      <button role="tab" class="tab" data-tab="Paiements">Paiements</button>
+      <button role="tab" class="tab" data-tab="Employes">Employés</button>
+      <button role="tab" class="tab" data-tab="Theme">Thème</button>
+      <button role="tab" class="tab" data-tab="Securite">Sécurité</button>
     </div>
 
-    <!-- Section Informations -->
-    <div id="sectionInfos">
+    <!-- ── Informations ────────────────────────── -->
+    <section id="sectionInfos">
       <div class="card bg-base-100 shadow-lg">
         <div class="card-body">
           <h2 class="card-title">Informations générales</h2>
-          
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            
             <div class="form-control md:col-span-2">
-              <label class="label"><span class="label-text">ID Restaurant (non modifiable)</span></label>
-              <input type="text" id="restaurantId" class="input input-bordered input-disabled" disabled />
+              <label class="label" for="restaurantId"><span class="label-text">ID Restaurant</span></label>
+              <input id="restaurantId" type="text" class="input input-bordered input-disabled" disabled />
             </div>
-
             <div class="form-control">
-              <label class="label"><span class="label-text">Nom du restaurant</span></label>
-              <input type="text" id="nom" class="input input-bordered" />
+              <label class="label" for="nom"><span class="label-text">Nom</span></label>
+              <input id="nom" type="text" class="input input-bordered" />
             </div>
-
             <div class="form-control">
-              <label class="label"><span class="label-text">Téléphone</span></label>
-              <input type="tel" id="telephone" class="input input-bordered" />
+              <label class="label" for="telephone"><span class="label-text">Téléphone</span></label>
+              <input id="telephone" type="tel" class="input input-bordered" />
             </div>
-
             <div class="form-control md:col-span-2">
-              <label class="label"><span class="label-text">Email</span></label>
-              <input type="email" id="email" class="input input-bordered" />
+              <label class="label" for="email"><span class="label-text">Email</span></label>
+              <input id="email" type="email" class="input input-bordered" />
             </div>
-
             <div class="form-control md:col-span-2">
-              <label class="label"><span class="label-text">Description</span></label>
+              <label class="label" for="description"><span class="label-text">Description</span></label>
               <textarea id="description" class="textarea textarea-bordered h-24"></textarea>
             </div>
-
             <div class="form-control md:col-span-2">
-              <label class="label"><span class="label-text">Adresse complète</span></label>
+              <label class="label" for="adresse"><span class="label-text">Adresse</span></label>
               <textarea id="adresse" class="textarea textarea-bordered"></textarea>
             </div>
-
             <div class="form-control">
-              <label class="label"><span class="label-text">Instagram</span></label>
-              <input type="text" id="instagram" class="input input-bordered" placeholder="@votre_compte" />
+              <label class="label" for="instagram"><span class="label-text">Instagram</span></label>
+              <input id="instagram" type="text" class="input input-bordered" placeholder="https://instagram.com/..." />
             </div>
-
             <div class="form-control">
-              <label class="label"><span class="label-text">Facebook</span></label>
-              <input type="text" id="facebook" class="input input-bordered" placeholder="URL Facebook" />
+              <label class="label" for="facebook"><span class="label-text">Facebook</span></label>
+              <input id="facebook" type="text" class="input input-bordered" placeholder="https://facebook.com/..." />
             </div>
-
           </div>
-
           <div class="card-actions justify-end mt-4">
             <button class="btn btn-primary" id="saveInfosBtn">Enregistrer</button>
           </div>
         </div>
       </div>
-    </div>
+    </section>
 
-    <!-- Section Horaires -->
-    <div id="sectionHoraires" class="hidden">
+    <!-- ── Horaires ────────────────────────────── -->
+    <section id="sectionHoraires" class="hidden">
       <div class="card bg-base-100 shadow-lg">
         <div class="card-body">
           <h2 class="card-title">Horaires d'ouverture</h2>
-          
-          <div class="space-y-4" id="horairesContainer">
-          </div>
-
+          <div id="horairesContainer" class="space-y-3"></div>
           <div class="card-actions justify-end mt-4">
             <button class="btn btn-primary" id="saveHorairesBtn">Enregistrer</button>
           </div>
         </div>
       </div>
-    </div>
+    </section>
 
-    <!-- Section Services -->
-    <div id="sectionServices" class="hidden">
+    <!-- ── Services ───────────────────────────── -->
+    <section id="sectionServices" class="hidden">
       <div class="card bg-base-100 shadow-lg mb-6">
         <div class="card-body">
           <h2 class="card-title">Modes de service</h2>
-          
-          <div class="space-y-4" id="modesServiceContainer">
-          </div>
-
+          <div id="modesServiceContainer" class="space-y-3"></div>
           <div class="card-actions justify-end mt-4">
             <button class="btn btn-primary" id="saveServicesBtn">Enregistrer</button>
           </div>
         </div>
       </div>
-
       <div class="card bg-base-100 shadow-lg">
         <div class="card-body">
           <h2 class="card-title">Zones de livraison</h2>
-          
-          <div class="space-y-3" id="zonesContainer">
-          </div>
-
+          <div id="zonesContainer" class="space-y-3"></div>
           <div class="mt-4">
-            <button class="btn btn-sm btn-ghost" id="addZoneBtn">+ Ajouter une zone</button>
+            <button class="btn btn-sm btn-outline" id="addZoneBtn">+ Ajouter une zone</button>
           </div>
         </div>
       </div>
-    </div>
+    </section>
 
-    <!-- Section Paiements -->
-    <div id="sectionPaiements" class="hidden">
+    <!-- ── Paiements ──────────────────────────── -->
+    <section id="sectionPaiements" class="hidden">
       <div class="card bg-base-100 shadow-lg">
         <div class="card-body">
           <h2 class="card-title">Méthodes de paiement</h2>
-          
-          <div class="space-y-4" id="paiementsContainer">
-          </div>
-
+          <div id="paiementsContainer" class="space-y-3"></div>
           <div class="card-actions justify-end mt-4">
             <button class="btn btn-primary" id="savePaiementsBtn">Enregistrer</button>
           </div>
         </div>
       </div>
-    </div>
+    </section>
 
-    <!-- Section Employés -->
-    <div id="sectionEmployes" class="hidden">
-      
-      <!-- Chefs -->
-      <div class="card bg-base-100 shadow-lg mb-6">
-        <div class="card-body">
-          <div class="flex justify-between items-center mb-4">
-            <h2 class="card-title">👨‍🍳 Chefs de cuisine</h2>
-            <button class="btn btn-sm btn-primary" onclick="openAddEmployeModal('chef')">Ajouter</button>
+    <!-- ── Employés ───────────────────────────── -->
+    <section id="sectionEmployes" class="hidden">
+      {[['chef','👨‍🍳','Chefs','chefsContainer'],['livreur','🚚','Livreurs','livreursContainer'],['caissier','💰','Caissiers','caissiersContainer']].map(([type,icon,label,cid]) => (
+        <div class="card bg-base-100 shadow-lg mb-6">
+          <div class="card-body">
+            <div class="flex justify-between items-center">
+              <h2 class="card-title">{icon} {label}</h2>
+              <button class="btn btn-sm btn-primary open-employe-add" data-type={type}>Ajouter</button>
+            </div>
+            <div id={cid} class="space-y-2 mt-2"></div>
           </div>
-          <div class="space-y-2" id="chefsContainer"></div>
         </div>
-      </div>
+      ))}
+    </section>
 
-      <!-- Livreurs -->
-      <div class="card bg-base-100 shadow-lg mb-6">
-        <div class="card-body">
-          <div class="flex justify-between items-center mb-4">
-            <h2 class="card-title">🚚 Livreurs</h2>
-            <button class="btn btn-sm btn-primary" onclick="openAddEmployeModal('livreur')">Ajouter</button>
-          </div>
-          <div class="space-y-2" id="livreursContainer"></div>
-        </div>
-      </div>
-
-      <!-- Caissiers -->
-      <div class="card bg-base-100 shadow-lg">
-        <div class="card-body">
-          <div class="flex justify-between items-center mb-4">
-            <h2 class="card-title">💰 Caissiers</h2>
-            <button class="btn btn-sm btn-primary" onclick="openAddEmployeModal('caissier')">Ajouter</button>
-          </div>
-          <div class="space-y-2" id="caissiersContainer"></div>
-        </div>
-      </div>
-
-    </div>
-
-    <!-- Section Thème -->
-    <div id="sectionTheme" class="hidden">
+    <!-- ── Thème ──────────────────────────────── -->
+    <section id="sectionTheme" class="hidden">
       <div class="card bg-base-100 shadow-lg">
         <div class="card-body">
           <h2 class="card-title">Apparence</h2>
-          
           <div class="form-control">
-            <label class="label"><span class="label-text">Thème DaisyUI</span></label>
+            <label class="label" for="themeDaisy"><span class="label-text">Thème DaisyUI</span></label>
             <select id="themeDaisy" class="select select-bordered">
-              <option value="light">Light</option>
-              <option value="dark">Dark</option>
-              <option value="cupcake">Cupcake</option>
-              <option value="bumblebee">Bumblebee</option>
-              <option value="emerald">Emerald</option>
-              <option value="corporate">Corporate</option>
-              <option value="synthwave">Synthwave</option>
-              <option value="retro">Retro</option>
-              <option value="cyberpunk">Cyberpunk</option>
-              <option value="valentine">Valentine</option>
-              <option value="halloween">Halloween</option>
-              <option value="garden">Garden</option>
-              <option value="forest">Forest</option>
-              <option value="aqua">Aqua</option>
-              <option value="lofi">Lofi</option>
-              <option value="pastel">Pastel</option>
-              <option value="fantasy">Fantasy</option>
-              <option value="wireframe">Wireframe</option>
-              <option value="black">Black</option>
-              <option value="luxury">Luxury</option>
-              <option value="dracula">Dracula</option>
-              <option value="cmyk">CMYK</option>
-              <option value="autumn">Autumn</option>
-              <option value="business">Business</option>
-              <option value="acid">Acid</option>
-              <option value="lemonade">Lemonade</option>
-              <option value="night">Night</option>
-              <option value="coffee">Coffee</option>
-              <option value="winter">Winter</option>
+              {['light','dark','cupcake','bumblebee','emerald','corporate','synthwave','retro',
+                'cyberpunk','valentine','halloween','garden','forest','aqua','lofi','pastel',
+                'fantasy','wireframe','black','luxury','dracula','cmyk','autumn','business',
+                'acid','lemonade','night','coffee','winter','dim','nord','sunset'].map(t => (
+                <option value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>
+              ))}
             </select>
           </div>
-
           <div class="form-control mt-4">
-            <label class="label"><span class="label-text">Logo</span></label>
-            <input type="file" id="logoUpload" class="file-input file-input-bordered" accept="image/*" />
-            <div class="mt-2">
-              <img id="logoPreview" class="w-24 h-24 object-cover rounded" />
+            <label class="label" for="logoUpload"><span class="label-text">Logo</span></label>
+            <input id="logoUpload" type="file" class="file-input file-input-bordered" accept="image/*" />
+            <div class="mt-3" id="logoPreviewWrap" style="display:none">
+              <img id="logoPreview" class="w-24 h-24 object-contain rounded-xl border border-base-300" alt="Logo" />
             </div>
           </div>
-
           <div class="card-actions justify-end mt-4">
             <button class="btn btn-primary" id="saveThemeBtn">Enregistrer</button>
           </div>
         </div>
       </div>
-    </div>
+    </section>
 
-    <!-- Section Sécurité -->
-    <div id="sectionSecurite" class="hidden">
+    <!-- ── Sécurité ───────────────────────────── -->
+    <section id="sectionSecurite" class="hidden">
       <div class="card bg-base-100 shadow-lg">
         <div class="card-body">
           <h2 class="card-title">Sécurité & Accès</h2>
-          
-          <div class="alert alert-warning mb-4">
-            <span>⚠️ Le changement de mot de passe vous déconnectera</span>
+          <div class="alert alert-warning mb-4 text-sm">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+            </svg>
+            Le changement de mot de passe vous déconnectera automatiquement.
           </div>
-
           <div class="form-control">
-            <label class="label"><span class="label-text">Nom d'utilisateur</span></label>
-            <input type="text" id="username" class="input input-bordered" />
+            <label class="label" for="username"><span class="label-text">Nom d'utilisateur admin</span></label>
+            <input id="username" type="text" class="input input-bordered" autocomplete="username" />
           </div>
-
           <div class="form-control mt-4">
-            <label class="label"><span class="label-text">Nouveau mot de passe</span></label>
-            <input type="password" id="newPassword" class="input input-bordered" />
+            <label class="label" for="newPassword"><span class="label-text">Nouveau mot de passe</span></label>
+            <input id="newPassword" type="password" class="input input-bordered" autocomplete="new-password" />
           </div>
-
           <div class="form-control mt-4">
-            <label class="label"><span class="label-text">Confirmer le mot de passe</span></label>
-            <input type="password" id="confirmPassword" class="input input-bordered" />
+            <label class="label" for="confirmPassword"><span class="label-text">Confirmer le mot de passe</span></label>
+            <input id="confirmPassword" type="password" class="input input-bordered" autocomplete="new-password" />
           </div>
-
           <div class="card-actions justify-end mt-4">
             <button class="btn btn-primary" id="saveSecuriteBtn">Enregistrer</button>
           </div>
         </div>
       </div>
-    </div>
+    </section>
 
   </div>
+
+  <!-- Toast -->
+  <div id="toast-container" class="toast toast-top toast-end z-50" aria-live="polite"></div>
 
   <!-- Modal Employé -->
-<dialog id="employeModal" class="modal">
-  <div class="modal-box">
-    <form method="dialog">
-      <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
-    </form>
-    
-    <h3 class="font-bold text-lg mb-4" id="employeModalTitle">Ajouter un employé</h3>
-    
-    <div class="space-y-4">
-      <div class="form-control">
-        <label class="label"><span class="label-text">Nom complet</span></label>
-        <input type="text" id="employeNom" class="input input-bordered" placeholder="John Doe" />
+  <dialog id="employeModal" class="modal">
+    <div class="modal-box">
+      <form method="dialog">
+        <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" aria-label="Fermer">✕</button>
+      </form>
+      <h3 class="font-bold text-lg mb-4" id="employeModalTitle">Ajouter un employé</h3>
+      <div class="space-y-4">
+        <div class="form-control">
+          <label class="label" for="employeNom"><span class="label-text">Nom complet *</span></label>
+          <input id="employeNom" type="text" class="input input-bordered" placeholder="Jean Dupont" />
+        </div>
+        <div class="form-control">
+          <label class="label" for="employeUsername"><span class="label-text">Identifiant *</span></label>
+          <input id="employeUsername" type="text" class="input input-bordered" placeholder="jean" autocomplete="off" />
+        </div>
+        <div class="form-control">
+          <label class="label" for="employePassword">
+            <span class="label-text">Mot de passe</span>
+            <span class="label-text-alt text-base-content/50" id="passwordHint">Obligatoire pour un nouvel employé</span>
+          </label>
+          <input id="employePassword" type="password" class="input input-bordered" placeholder="••••••••" autocomplete="new-password" />
+        </div>
       </div>
-
-      <div class="form-control">
-        <label class="label"><span class="label-text">Identifiant</span></label>
-        <input type="text" id="employeUsername" class="input input-bordered" placeholder="john" />
-      </div>
-
-      <div class="form-control">
-        <label class="label"><span class="label-text">Mot de passe</span></label>
-        <input type="password" id="employePassword" class="input input-bordered" placeholder="••••••••" />
+      <div class="modal-action">
+        <button class="btn btn-ghost" id="cancelEmployeBtn">Annuler</button>
+        <button class="btn btn-primary" id="saveEmployeBtn">Enregistrer</button>
       </div>
     </div>
+    <form method="dialog" class="modal-backdrop"><button>fermer</button></form>
+  </dialog>
 
-    <div class="modal-action">
-      <button class="btn" onclick="employeModal.close()">Annuler</button>
-      <button class="btn btn-primary" id="saveEmployeBtn">Enregistrer</button>
-    </div>
-  </div>
-</dialog>
-
+  <meta name="api-url" content={apiBaseUrl} />
 </AdminLayout>
 
 <script>
-  import { api } from '../../lib/api';
-  
-  const RESTAURANT_ID = import.meta.env.PUBLIC_DEFAULT_RESTAURANT_ID || 'rare-burger';
-  let configData = {};
-  const JOURS = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
+  // ════════════════════════════════════════════
+  //  admin/config.astro — logique complète
+  //  Zéro import relatif, fetch direct + token cookie
+  // ════════════════════════════════════════════
 
+  // ── Types ─────────────────────────────────────
+  interface Horaire  { debut: string; fin: string; }
+  interface Employe  { nom?: string; username: string; password?: string; }
+  interface ModeConfig    { active: boolean; label: string; icon: string; description?: string; delai_preparation?: string; }
+  interface PaymentConfig { active: boolean; label: string; icon: string; description?: string; }
+  interface ZoneLivraison { id?: string; nom: string; codes_postaux: string[]; frais: number; minimum?: number; temps_estime?: string; }
+
+  interface Config {
+    restaurant_id?: string;
+    nom?: string; telephone?: string; email?: string;
+    description?: string; adresse?: string;
+    reseaux_sociaux?: Record<string, string>;
+    horaires?: Record<string, Horaire[]>;
+    modes_service?: Record<string, ModeConfig>;
+    zones_livraison?: ZoneLivraison[];
+    methodes_paiement?: Record<string, PaymentConfig>;
+    chefs?:    Record<string, Employe>;
+    livreurs?: Record<string, Employe>;
+    caissiers?:Record<string, Employe>;
+    theme?: Record<string, string>;
+    admin?: { username?: string };
+    [key: string]: unknown;
+  }
+
+  // ── État ──────────────────────────────────────
+  let cfg: Config = {};
+  let currentEmployeType: string | null = null;
+  let currentEmployeId:   string | null = null;
+
+  const JOURS = ['lundi','mardi','mercredi','jeudi','vendredi','samedi','dimanche'] as const;
+
+  // ── Helpers ───────────────────────────────────
+  function getApiBase(): string {
+    return document.querySelector<HTMLMetaElement>('meta[name="api-url"]')?.content
+      ?? 'http://127.0.0.1:5000/api';
+  }
+
+  function getToken(): string {
+    const c = document.cookie.split(';').find(x => x.trim().startsWith('admin_token='));
+    return c ? decodeURIComponent(c.split('=')[1].trim()) : '';
+  }
+
+  function authHeaders(): Record<string, string> {
+    return { 'Authorization': `Bearer ${getToken()}`, 'Content-Type': 'application/json' };
+  }
+
+  function esc(v: unknown): string {
+    const d = document.createElement('div');
+    d.textContent = String(v ?? '');
+    return d.innerHTML;
+  }
+
+  function showToast(msg: string, type: 'success'|'error'|'warning'|'info' = 'success') {
+    const c = document.getElementById('toast-container')!;
+    const el = document.createElement('div');
+    el.className = `alert alert-${type} shadow-md text-sm py-2 px-4 rounded-xl`;
+    el.textContent = msg;
+    c.appendChild(el);
+    setTimeout(() => el.remove(), 3500);
+  }
+
+  function q<T extends HTMLElement>(id: string) { return document.getElementById(id) as T; }
+
+  // ── Chargement ────────────────────────────────
   async function loadConfig() {
     try {
-      configData = await api.config.get();
-      populateAllSections();
-      document.getElementById('loader').classList.add('hidden');
-      document.getElementById('configContent').classList.remove('hidden');
-    } catch (error) {
-      console.error('Erreur chargement config:', error);
+      const res = await fetch(`${getApiBase()}/config`, { headers: authHeaders() });
+      if (res.status === 401) { window.location.href = '/login?expired=1'; return; }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      cfg = await res.json() as Config;
+      populateAll();
+      q('loader').classList.add('hidden');
+      q('configContent').classList.remove('hidden');
+    } catch (err: unknown) {
+      q('loader').innerHTML = `<div class="alert alert-error"><span>Erreur de chargement : ${esc(err instanceof Error ? err.message : String(err))}</span></div>`;
     }
   }
 
-  function populateAllSections() {
+  async function saveConfig(section = '') {
+    try {
+      const res = await fetch(`${getApiBase()}/config`, {
+        method: 'PUT',
+        headers: authHeaders(),
+        body: JSON.stringify(cfg),
+      });
+      if (res.status === 401) { window.location.href = '/login?expired=1'; return; }
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error((body as any).error ?? `HTTP ${res.status}`);
+      }
+      showToast('Configuration enregistrée ✓', 'success');
+
+      if (section === 'securite') {
+        // Déconnexion après changement de mot de passe
+        document.cookie = 'admin_token=; path=/; max-age=0';
+        setTimeout(() => window.location.href = '/login', 1200);
+      }
+    } catch (err: unknown) {
+      showToast(`Erreur : ${err instanceof Error ? err.message : String(err)}`, 'error');
+    }
+  }
+
+  // ── Populate sections ─────────────────────────
+  function populateAll() {
     populateInfos();
     populateHoraires();
     populateServices();
     populatePaiements();
-    renderEmployes();
+    populateEmployes();
     populateTheme();
     populateSecurite();
   }
 
   function populateInfos() {
-    document.getElementById('restaurantId').value = configData.restaurant_id || RESTAURANT_ID;
-    document.getElementById('nom').value = configData.nom || '';
-    document.getElementById('telephone').value = configData.telephone || '';
-    document.getElementById('email').value = configData.email || '';
-    document.getElementById('description').value = configData.description || '';
-    document.getElementById('adresse').value = configData.adresse || '';
-    document.getElementById('instagram').value = configData.reseaux_sociaux?.instagram || '';
-    document.getElementById('facebook').value = configData.reseaux_sociaux?.facebook || '';
+    (q<HTMLInputElement>('restaurantId')).value = cfg.restaurant_id ?? '';
+    (q<HTMLInputElement>('nom')).value         = cfg.nom         ?? '';
+    (q<HTMLInputElement>('telephone')).value   = cfg.telephone   ?? '';
+    (q<HTMLInputElement>('email')).value       = cfg.email       ?? '';
+    (q<HTMLTextAreaElement>('description')).value = cfg.description ?? '';
+    (q<HTMLTextAreaElement>('adresse')).value     = cfg.adresse     ?? '';
+    (q<HTMLInputElement>('instagram')).value = cfg.reseaux_sociaux?.instagram ?? '';
+    (q<HTMLInputElement>('facebook')).value  = cfg.reseaux_sociaux?.facebook  ?? '';
   }
 
   function populateHoraires() {
-    const container = document.getElementById('horairesContainer');
-    container.innerHTML = JOURS.map(jour => {
-      const horairesJour = configData.horaires?.[jour] || [];
-      return `
-        <div class="card bg-base-200 p-4">
-          <div class="flex items-center justify-between mb-2">
-            <h3 class="font-bold capitalize">${jour}</h3>
-            <button class="btn btn-xs btn-ghost add-horaire-btn" data-jour="${jour}">+ Ajouter</button>
-          </div>
-          <div class="space-y-2" id="horaires-${jour}">
-            ${horairesJour.map((h, i) => `
-              <div class="flex gap-2 items-center">
-                <input type="time" value="${h.debut}" class="input input-sm input-bordered" data-jour="${jour}" data-index="${i}" data-field="debut" />
-                <span>-</span>
-                <input type="time" value="${h.fin}" class="input input-sm input-bordered" data-jour="${jour}" data-index="${i}" data-field="fin" />
-                <button class="btn btn-xs btn-ghost remove-horaire-btn" data-jour="${jour}" data-index="${i}">🗑️</button>
-              </div>
-            `).join('')}
-          </div>
+    const container = q('horairesContainer');
+    container.innerHTML = '';
+    JOURS.forEach(jour => {
+      const slots: Horaire[] = (cfg.horaires?.[jour]) ?? [];
+      const card = document.createElement('div');
+      card.className = 'card bg-base-200 p-4';
+      card.innerHTML = `
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="font-bold capitalize">${esc(jour)}</h3>
+          <button class="btn btn-xs btn-ghost add-slot" data-jour="${jour}">+ Ajouter</button>
+        </div>
+        <div class="space-y-2 slots-${jour}">
+          ${slots.map((h, i) => slotHtml(jour, i, h.debut, h.fin)).join('')}
         </div>
       `;
-    }).join('');
-
-    attachHorairesListeners();
-  }
-
-  function attachHorairesListeners() {
-    document.querySelectorAll('.add-horaire-btn').forEach(btn => {
+      container.appendChild(card);
+    });
+    // Listeners add/remove/change
+    container.querySelectorAll<HTMLButtonElement>('.add-slot').forEach(btn => {
       btn.addEventListener('click', () => {
-        const jour = btn.dataset.jour;
-        if (!configData.horaires) configData.horaires = {};
-        if (!configData.horaires[jour]) configData.horaires[jour] = [];
-        configData.horaires[jour].push({ debut: '09:00', fin: '18:00' });
+        const jour = btn.dataset.jour!;
+        if (!cfg.horaires) cfg.horaires = {};
+        if (!cfg.horaires[jour]) cfg.horaires[jour] = [];
+        cfg.horaires[jour].push({ debut: '09:00', fin: '18:00' });
         populateHoraires();
       });
     });
-
-    document.querySelectorAll('.remove-horaire-btn').forEach(btn => {
+    container.querySelectorAll<HTMLButtonElement>('.remove-slot').forEach(btn => {
       btn.addEventListener('click', () => {
         const { jour, index } = btn.dataset;
-        configData.horaires[jour].splice(parseInt(index), 1);
+        cfg.horaires![jour!].splice(parseInt(index!), 1);
         populateHoraires();
       });
     });
-
-    document.querySelectorAll('input[data-jour]').forEach(input => {
-      input.addEventListener('change', (e) => {
-        const { jour, index, field } = e.target.dataset;
-        configData.horaires[jour][parseInt(index)][field] = e.target.value;
+    container.querySelectorAll<HTMLInputElement>('input[data-slot-jour]').forEach(inp => {
+      inp.addEventListener('change', () => {
+        const { slotJour, slotIndex, slotField } = inp.dataset;
+        cfg.horaires![slotJour!][parseInt(slotIndex!)][slotField as keyof Horaire] = inp.value;
       });
     });
+  }
+
+  function slotHtml(jour: string, i: number, debut: string, fin: string): string {
+    return `
+      <div class="flex gap-2 items-center">
+        <input type="time" value="${esc(debut)}" class="input input-sm input-bordered"
+          data-slot-jour="${jour}" data-slot-index="${i}" data-slot-field="debut" />
+        <span class="text-base-content/50">–</span>
+        <input type="time" value="${esc(fin)}" class="input input-sm input-bordered"
+          data-slot-jour="${jour}" data-slot-index="${i}" data-slot-field="fin" />
+        <button class="btn btn-xs btn-ghost text-error remove-slot" data-jour="${jour}" data-index="${i}"
+          aria-label="Supprimer">✕</button>
+      </div>
+    `;
   }
 
   function populateServices() {
-    const defaultServices = {
-      sur_place: { active: true, label: 'Sur place', icon: '🍽️', description: 'Dégustez sur place' },
-      emporter: { active: true, label: 'À emporter', icon: '🥡', description: 'Commande à emporter' },
-      livraison: { active: true, label: 'Livraison', icon: '🚚', description: 'Livraison à domicile' }
+    const defaults: Record<string, ModeConfig> = {
+      sur_place: { active: true,  label: 'Sur place',    icon: '🍽️', description: '' },
+      emporter:  { active: true,  label: 'À emporter',   icon: '🥡',  description: '' },
+      livraison: { active: true,  label: 'Livraison',    icon: '🚚',  description: '' },
     };
-
-    const services = configData.modes_service || defaultServices;
-    const container = document.getElementById('modesServiceContainer');
-    
-    container.innerHTML = Object.entries(services).map(([key, service]) => `
-      <div class="card bg-base-200 p-4">
-        <div class="flex items-center gap-4">
-          <input type="checkbox" class="checkbox" id="service-${key}" ${service.active ? 'checked' : ''} />
-          <div class="flex-1">
-            <div class="flex items-center gap-2">
-              <input type="text" value="${service.icon}" class="input input-sm w-16 text-center" id="service-icon-${key}" />
-              <input type="text" value="${service.label}" class="input input-sm flex-1" id="service-label-${key}" />
-            </div>
-            <input type="text" value="${service.description || ''}" class="input input-sm w-full mt-2" placeholder="Description" id="service-desc-${key}" />
-          </div>
+    const services = { ...defaults, ...(cfg.modes_service ?? {}) };
+    const c = q('modesServiceContainer');
+    c.innerHTML = '';
+    Object.entries(services).forEach(([key, s]) => {
+      const row = document.createElement('div');
+      row.className = 'card bg-base-200 p-4';
+      row.innerHTML = `
+        <div class="flex items-center gap-3">
+          <input type="checkbox" class="checkbox" id="svc-${key}" ${s.active ? 'checked' : ''} />
+          <input type="text" value="${esc(s.icon)}"  class="input input-sm w-14 text-center" id="svc-icon-${key}" />
+          <input type="text" value="${esc(s.label)}" class="input input-sm flex-1" id="svc-label-${key}" />
         </div>
-      </div>
-    `).join('');
+        <div class="mt-2">
+          <input type="text" value="${esc(s.description ?? '')}" class="input input-sm w-full"
+            placeholder="Description" id="svc-desc-${key}" />
+        </div>
+      `;
+      c.appendChild(row);
+    });
 
-    const zonesContainer = document.getElementById('zonesContainer');
-    const zones = configData.zones_livraison || [];
-    
-    zonesContainer.innerHTML = zones.map((zone, i) => `
-      <div class="card bg-base-200 p-4">
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-2">
-          <input type="text" value="${zone.nom}" class="input input-sm" placeholder="Nom" data-zone="${i}" data-field="nom" />
-          <input type="text" value="${zone.codes_postaux?.join(', ') || ''}" class="input input-sm" placeholder="CP (séparés par ,)" data-zone="${i}" data-field="codes_postaux" />
-          <input type="number" step="0.01" value="${zone.frais}" class="input input-sm" placeholder="Frais" data-zone="${i}" data-field="frais" />
+    // Zones
+    const zc = q('zonesContainer');
+    zc.innerHTML = '';
+    (cfg.zones_livraison ?? []).forEach((z, i) => {
+      const row = document.createElement('div');
+      row.className = 'card bg-base-200 p-3';
+      row.innerHTML = `
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+          <input type="text"   value="${esc(z.nom)}"                    class="input input-sm" placeholder="Nom"         data-zone="${i}" data-field="nom" />
+          <input type="text"   value="${esc((z.codes_postaux ?? []).join(', '))}" class="input input-sm" placeholder="CP (séparés par ,)" data-zone="${i}" data-field="codes_postaux" />
+          <input type="number" step="0.01" value="${z.frais ?? 0}"      class="input input-sm" placeholder="Frais €"     data-zone="${i}" data-field="frais" />
           <div class="flex gap-1">
-            <input type="text" value="${zone.temps_estime || ''}" class="input input-sm flex-1" placeholder="Temps" data-zone="${i}" data-field="temps_estime" />
-            <button class="btn btn-sm btn-ghost remove-zone-btn" data-zone="${i}">🗑️</button>
+            <input type="text" value="${esc(z.temps_estime ?? '')}"     class="input input-sm flex-1" placeholder="Temps" data-zone="${i}" data-field="temps_estime" />
+            <button class="btn btn-sm btn-ghost text-error remove-zone" data-zone="${i}" aria-label="Supprimer">✕</button>
           </div>
         </div>
-      </div>
-    `).join('');
-
-    document.getElementById('addZoneBtn').addEventListener('click', () => {
-      if (!configData.zones_livraison) configData.zones_livraison = [];
-      configData.zones_livraison.push({
-        id: `zone${Date.now()}`,
-        nom: 'Nouvelle zone',
-        codes_postaux: [],
-        frais: 0,
-        temps_estime: '30-45 min'
-      });
-      populateServices();
+      `;
+      zc.appendChild(row);
     });
 
-    document.querySelectorAll('.remove-zone-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const index = parseInt(btn.dataset.zone);
-        configData.zones_livraison.splice(index, 1);
-        populateServices();
-      });
-    });
-
-    document.querySelectorAll('input[data-zone]').forEach(input => {
-      input.addEventListener('change', (e) => {
-        const { zone, field } = e.target.dataset;
-        const index = parseInt(zone);
-        let value = e.target.value;
-        
+    zc.querySelectorAll<HTMLInputElement>('input[data-zone]').forEach(inp => {
+      inp.addEventListener('change', () => {
+        const idx = parseInt(inp.dataset.zone!);
+        const field = inp.dataset.field!;
+        const zones = cfg.zones_livraison!;
         if (field === 'codes_postaux') {
-          value = value.split(',').map(s => s.trim()).filter(s => s);
+          zones[idx].codes_postaux = inp.value.split(',').map(s => s.trim()).filter(Boolean);
         } else if (field === 'frais') {
-          value = parseFloat(value);
+          zones[idx].frais = parseFloat(inp.value) || 0;
+        } else {
+          (zones[idx] as any)[field] = inp.value;
         }
-        
-        configData.zones_livraison[index][field] = value;
+      });
+    });
+    zc.querySelectorAll<HTMLButtonElement>('.remove-zone').forEach(btn => {
+      btn.addEventListener('click', () => {
+        cfg.zones_livraison?.splice(parseInt(btn.dataset.zone!), 1);
+        populateServices();
       });
     });
   }
 
   function populatePaiements() {
-    const defaultPaiements = {
-      comptoir: { active: true, label: 'Au comptoir', icon: '💵' },
-      reception: { active: true, label: 'À la réception', icon: '💰' },
-      en_ligne: { active: false, label: 'En ligne', icon: '💳' }
+    const defaults: Record<string, PaymentConfig> = {
+      comptoir:  { active: true,  label: 'Au comptoir',       icon: '💵', description: '' },
+      reception: { active: true,  label: 'À la réception',    icon: '💰', description: '' },
+      en_ligne:  { active: false, label: 'Paiement en ligne', icon: '💳', description: '' },
+    };
+    const paiements = { ...defaults, ...(cfg.methodes_paiement ?? {}) };
+    const c = q('paiementsContainer');
+    c.innerHTML = '';
+    Object.entries(paiements).forEach(([key, m]) => {
+      const row = document.createElement('div');
+      row.className = 'card bg-base-200 p-4';
+      row.innerHTML = `
+        <div class="flex items-center gap-3">
+          <input type="checkbox" class="checkbox" id="pay-${key}" ${m.active ? 'checked' : ''} />
+          <input type="text" value="${esc(m.icon)}"  class="input input-sm w-14 text-center" id="pay-icon-${key}" />
+          <input type="text" value="${esc(m.label)}" class="input input-sm flex-1"            id="pay-label-${key}" />
+        </div>
+      `;
+      c.appendChild(row);
+    });
+  }
+
+  // ── Employés ──────────────────────────────────
+  const EMPLOYE_SECTIONS: Array<{ type: string; key: string; containerId: string }> = [
+    { type: 'chef',    key: 'chefs',    containerId: 'chefsContainer'    },
+    { type: 'livreur', key: 'livreurs', containerId: 'livreursContainer' },
+    { type: 'caissier',key: 'caissiers',containerId: 'caissiersContainer'},
+  ];
+
+  function populateEmployes() {
+    EMPLOYE_SECTIONS.forEach(({ type, key, containerId }) => {
+      const container = q(containerId);
+      const employes = (cfg[key] as Record<string, Employe>) ?? {};
+      container.innerHTML = '';
+
+      if (!Object.keys(employes).length) {
+        container.innerHTML = `<p class="text-base-content/50 text-center py-4 text-sm">Aucun ${type} enregistré</p>`;
+        return;
+      }
+
+      Object.entries(employes).forEach(([id, emp]) => {
+        const card = document.createElement('div');
+        card.className = 'flex items-center justify-between p-3 bg-base-200 rounded-xl';
+        card.innerHTML = `
+          <div>
+            <p class="font-semibold text-sm">${esc(emp.nom ?? emp.username)}</p>
+            <p class="text-xs text-base-content/50">@${esc(emp.username)}</p>
+          </div>
+          <div class="flex gap-1">
+            <button class="btn btn-xs btn-ghost edit-emp" data-type="${type}" data-id="${esc(id)}">✏️</button>
+            <button class="btn btn-xs btn-ghost text-error del-emp"  data-type="${type}" data-id="${esc(id)}" data-name="${esc(emp.nom ?? emp.username)}">🗑️</button>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+
+      container.querySelectorAll<HTMLButtonElement>('.edit-emp').forEach(btn => {
+        btn.addEventListener('click', () => openEmployeModal(btn.dataset.type!, btn.dataset.id!));
+      });
+      container.querySelectorAll<HTMLButtonElement>('.del-emp').forEach(btn => {
+        btn.addEventListener('click', () => deleteEmploye(btn.dataset.type!, btn.dataset.id!, btn.dataset.name!));
+      });
+    });
+  }
+
+  function openEmployeModal(type: string, id?: string) {
+    currentEmployeType = type;
+    currentEmployeId   = id ?? null;
+
+    const labels: Record<string, string> = {
+      chef: 'chef', livreur: 'livreur', caissier: 'caissier',
     };
 
-    const paiements = configData.methodes_paiement || defaultPaiements;
-    const container = document.getElementById('paiementsContainer');
-    
-    container.innerHTML = Object.entries(paiements).map(([key, method]) => `
-      <div class="card bg-base-200 p-4">
-        <div class="flex items-center gap-4">
-          <input type="checkbox" class="checkbox" id="paiement-${key}" ${method.active ? 'checked' : ''} />
-          <div class="flex-1 flex items-center gap-2">
-            <input type="text" value="${method.icon}" class="input input-sm w-16 text-center" id="paiement-icon-${key}" />
-            <input type="text" value="${method.label}" class="input input-sm flex-1" id="paiement-label-${key}" />
-          </div>
-        </div>
-      </div>
-    `).join('');
+    q('employeModalTitle').textContent = id
+      ? `Modifier le ${labels[type]}`
+      : `Ajouter un ${labels[type]}`;
+    q('passwordHint').textContent = id
+      ? 'Laisser vide pour conserver l\'actuel'
+      : 'Obligatoire pour un nouvel employé';
+
+    const key = pluralKey(type);
+    const emp: Employe | undefined = id ? (cfg[key] as Record<string,Employe>)?.[id] : undefined;
+
+    (q<HTMLInputElement>('employeNom')).value      = emp?.nom      ?? '';
+    (q<HTMLInputElement>('employeUsername')).value = emp?.username ?? '';
+    (q<HTMLInputElement>('employePassword')).value = '';
+
+    (document.getElementById('employeModal') as HTMLDialogElement).showModal();
+  }
+
+  async function deleteEmploye(type: string, id: string, name: string) {
+    if (!confirm(`Supprimer ${name} ?`)) return;
+    const key = pluralKey(type);
+    const section = cfg[key] as Record<string, Employe> | undefined;
+    if (section) delete section[id];
+    await saveConfig();
+    populateEmployes();
+  }
+
+  function pluralKey(type: string): string {
+    return { chef: 'chefs', livreur: 'livreurs', caissier: 'caissiers' }[type] ?? type;
   }
 
   function populateTheme() {
-    document.getElementById('themeDaisy').value = configData.theme?.daisy || 'autumn';
-    
-    if (configData.theme?.logo) {
-      const logoUrl = api.images.getUrl(configData.theme.logo);
-      document.getElementById('logoPreview').src = logoUrl;
+    (q<HTMLSelectElement>('themeDaisy')).value = cfg.theme?.daisy ?? 'light';
+    if (cfg.theme?.logo) {
+      const img = q<HTMLImageElement>('logoPreview');
+      img.src = `${getApiBase()}/images/${cfg.theme.logo}`;
+      q('logoPreviewWrap').style.display = 'block';
     }
   }
 
   function populateSecurite() {
-    document.getElementById('username').value = configData.admin?.username || 'admin';
+    (q<HTMLInputElement>('username')).value = cfg.admin?.username ?? 'admin';
   }
 
-  async function saveConfig(section) {
-    try {
-      await api.config.update(configData);
-      alert('Configuration enregistrée avec succès');
-      
-      if (section === 'securite') {
-        localStorage.removeItem('admin_token');
-        document.cookie = 'admin_token=; path=/; max-age=0';
-        window.location.href = '/admin';
-      }
-    } catch (error) {
-      console.error('Erreur:', error);
-      alert('Erreur lors de la sauvegarde');
-    }
-  }
-
-  document.getElementById('saveInfosBtn').addEventListener('click', () => {
-    configData.nom = document.getElementById('nom').value;
-    configData.telephone = document.getElementById('telephone').value;
-    configData.email = document.getElementById('email').value;
-    configData.description = document.getElementById('description').value;
-    configData.adresse = document.getElementById('adresse').value;
-    
-    if (!configData.reseaux_sociaux) configData.reseaux_sociaux = {};
-    configData.reseaux_sociaux.instagram = document.getElementById('instagram').value;
-    configData.reseaux_sociaux.facebook = document.getElementById('facebook').value;
-    
-    saveConfig('infos');
+  // ── Save handlers ─────────────────────────────
+  q('saveInfosBtn').addEventListener('click', () => {
+    cfg.nom         = (q<HTMLInputElement>('nom')).value;
+    cfg.telephone   = (q<HTMLInputElement>('telephone')).value;
+    cfg.email       = (q<HTMLInputElement>('email')).value;
+    cfg.description = (q<HTMLTextAreaElement>('description')).value;
+    cfg.adresse     = (q<HTMLTextAreaElement>('adresse')).value;
+    cfg.reseaux_sociaux = {
+      ...(cfg.reseaux_sociaux ?? {}),
+      instagram: (q<HTMLInputElement>('instagram')).value,
+      facebook:  (q<HTMLInputElement>('facebook')).value,
+    };
+    void saveConfig('infos');
   });
 
-  document.getElementById('saveHorairesBtn').addEventListener('click', () => {
-    saveConfig('horaires');
-  });
+  q('saveHorairesBtn').addEventListener('click', () => void saveConfig('horaires'));
 
-  document.getElementById('saveServicesBtn').addEventListener('click', () => {
-    if (!configData.modes_service) configData.modes_service = {};
-    
-    ['sur_place', 'emporter', 'livraison'].forEach(key => {
-      configData.modes_service[key] = {
-        active: document.getElementById(`service-${key}`).checked,
-        label: document.getElementById(`service-label-${key}`).value,
-        icon: document.getElementById(`service-icon-${key}`).value,
-        description: document.getElementById(`service-desc-${key}`).value
+  q('saveServicesBtn').addEventListener('click', () => {
+    const keys = ['sur_place', 'emporter', 'livraison'];
+    if (!cfg.modes_service) cfg.modes_service = {};
+    keys.forEach(k => {
+      cfg.modes_service![k] = {
+        active:      (q<HTMLInputElement>(`svc-${k}`))?.checked ?? false,
+        icon:        (q<HTMLInputElement>(`svc-icon-${k}`))?.value ?? '',
+        label:       (q<HTMLInputElement>(`svc-label-${k}`))?.value ?? '',
+        description: (q<HTMLInputElement>(`svc-desc-${k}`))?.value ?? '',
       };
     });
-    
-    saveConfig('services');
+    void saveConfig('services');
   });
 
-  document.getElementById('savePaiementsBtn').addEventListener('click', () => {
-    if (!configData.methodes_paiement) configData.methodes_paiement = {};
-    
-    ['comptoir', 'reception', 'en_ligne'].forEach(key => {
-      configData.methodes_paiement[key] = {
-        active: document.getElementById(`paiement-${key}`).checked,
-        label: document.getElementById(`paiement-label-${key}`).value,
-        icon: document.getElementById(`paiement-icon-${key}`).value
+  q('savePaiementsBtn').addEventListener('click', () => {
+    const keys = ['comptoir', 'reception', 'en_ligne'];
+    if (!cfg.methodes_paiement) cfg.methodes_paiement = {};
+    keys.forEach(k => {
+      cfg.methodes_paiement![k] = {
+        active: (q<HTMLInputElement>(`pay-${k}`))?.checked ?? false,
+        icon:   (q<HTMLInputElement>(`pay-icon-${k}`))?.value ?? '',
+        label:  (q<HTMLInputElement>(`pay-label-${k}`))?.value ?? '',
       };
     });
-    
-    saveConfig('paiements');
+    void saveConfig('paiements');
   });
 
-  document.getElementById('saveThemeBtn').addEventListener('click', async () => {
-    if (!configData.theme) configData.theme = {};
-    configData.theme.daisy = document.getElementById('themeDaisy').value;
-    
-    const logoFile = document.getElementById('logoUpload').files[0];
-    if (logoFile) {
+  q('saveThemeBtn').addEventListener('click', async () => {
+    if (!cfg.theme) cfg.theme = {};
+    cfg.theme.daisy = (q<HTMLSelectElement>('themeDaisy')).value;
+
+    const fileInput = q<HTMLInputElement>('logoUpload');
+    const file = fileInput.files?.[0];
+    if (file) {
       try {
-        const uploadData = await api.images.upload(logoFile);
-        configData.theme.logo = uploadData.filename;
-      } catch (error) {
-        console.error('Erreur upload logo:', error);
+        const fd = new FormData();
+        fd.append('image', file);
+        const res = await fetch(`${getApiBase()}/upload-image`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${getToken()}` },
+          body: fd,
+        });
+        if (!res.ok) throw new Error(`Upload HTTP ${res.status}`);
+        const data = await res.json() as { filename: string };
+        cfg.theme.logo = data.filename;
+        const img = q<HTMLImageElement>('logoPreview');
+        img.src = `${getApiBase()}/images/${data.filename}`;
+        q('logoPreviewWrap').style.display = 'block';
+      } catch (err: unknown) {
+        showToast(`Erreur upload logo : ${err instanceof Error ? err.message : ''}`, 'error');
+        return;
       }
     }
-    
-    saveConfig('theme');
+    void saveConfig('theme');
   });
 
-  document.getElementById('saveSecuriteBtn').addEventListener('click', () => {
-    const newPass = document.getElementById('newPassword').value;
-    const confirmPass = document.getElementById('confirmPassword').value;
-    
-    if (newPass && newPass !== confirmPass) {
-      alert('Les mots de passe ne correspondent pas');
+  q('saveSecuriteBtn').addEventListener('click', () => {
+    const newPass  = (q<HTMLInputElement>('newPassword')).value;
+    const confirm_ = (q<HTMLInputElement>('confirmPassword')).value;
+
+    if (newPass && newPass !== confirm_) {
+      showToast('Les mots de passe ne correspondent pas', 'error');
       return;
     }
-    
-    if (!configData.admin) configData.admin = {};
-    configData.admin.username = document.getElementById('username').value;
-    
-    if (newPass) {
-      configData.admin.password = newPass;
-    }
-    
-    saveConfig('securite');
+    if (!cfg.admin) cfg.admin = {};
+    cfg.admin.username = (q<HTMLInputElement>('username')).value;
+    if (newPass) (cfg.admin as any).password = newPass;
+
+    void saveConfig('securite');
   });
 
-  // Tabs navigation
-  const tabs = ['Infos', 'Horaires', 'Services', 'Paiements', 'Employes', 'Theme', 'Securite'];
-  tabs.forEach(tab => {
-    document.getElementById(`tab${tab}`).addEventListener('click', () => {
-      document.querySelectorAll('.tab').forEach(t => t.classList.remove('tab-active'));
-      document.getElementById(`tab${tab}`).classList.add('tab-active');
-      
-      tabs.forEach(t => {
-        document.getElementById(`section${t}`).classList.add('hidden');
+  // ── Modal employé ─────────────────────────────
+  q('saveEmployeBtn').addEventListener('click', async () => {
+    const nom      = (q<HTMLInputElement>('employeNom')).value.trim();
+    const username = (q<HTMLInputElement>('employeUsername')).value.trim();
+    const password = (q<HTMLInputElement>('employePassword')).value;
+
+    if (!nom || !username) { showToast('Nom et identifiant obligatoires', 'error'); return; }
+    if (!currentEmployeId && !password) { showToast('Mot de passe obligatoire', 'error'); return; }
+
+    const key = pluralKey(currentEmployeType!);
+    if (!cfg[key]) (cfg as any)[key] = {};
+    const section = cfg[key] as Record<string, Employe>;
+
+    const id = currentEmployeId ?? `${currentEmployeType}${Date.now()}`;
+    const existing = section[id];
+
+    section[id] = {
+      nom,
+      username,
+      // Conserver l'ancien mot de passe si non modifié
+      ...(password ? { password } : existing?.password ? { password: existing.password } : {}),
+    };
+
+    await saveConfig();
+    (document.getElementById('employeModal') as HTMLDialogElement).close();
+    populateEmployes();
+  });
+
+  q('cancelEmployeBtn').addEventListener('click', () => {
+    (document.getElementById('employeModal') as HTMLDialogElement).close();
+  });
+
+  // Boutons "Ajouter" des sections employés
+  document.querySelectorAll<HTMLButtonElement>('.open-employe-add').forEach(btn => {
+    btn.addEventListener('click', () => openEmployeModal(btn.dataset.type!));
+  });
+
+  // Bouton "Ajouter zone"
+  q('addZoneBtn').addEventListener('click', () => {
+    if (!cfg.zones_livraison) cfg.zones_livraison = [];
+    cfg.zones_livraison.push({
+      id: `zone${Date.now()}`,
+      nom: 'Nouvelle zone',
+      codes_postaux: [],
+      frais: 0,
+      temps_estime: '30-45 min',
+    });
+    populateServices();
+  });
+
+  // ── Tabs ──────────────────────────────────────
+  const TABS = ['Infos','Horaires','Services','Paiements','Employes','Theme','Securite'] as const;
+
+  document.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const target = btn.dataset.tab!;
+      document.querySelectorAll('[data-tab]').forEach(t => t.classList.remove('tab-active'));
+      btn.classList.add('tab-active');
+      TABS.forEach(t => {
+        document.getElementById(`section${t}`)?.classList.toggle('hidden', t !== target);
       });
-      document.getElementById(`section${tab}`).classList.remove('hidden');
     });
   });
 
-let currentEmployeType = null;
-let currentEmployeId = null;
+  // ── Logo preview local ────────────────────────
+  q<HTMLInputElement>('logoUpload').addEventListener('change', (e) => {
+    const file = (e.target as HTMLInputElement).files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const img = q<HTMLImageElement>('logoPreview');
+      img.src = ev.target?.result as string;
+      q('logoPreviewWrap').style.display = 'block';
+    };
+    reader.readAsDataURL(file);
+  });
 
-// Render employés
-function renderEmployes() {
-  renderChefs();
-  renderLivreurs();
-  renderCaissiers();
-}
-
-function renderChefs() {
-  const container = document.getElementById('chefsContainer');
-  const chefs = configData.chefs || {};
-  
-  if (Object.keys(chefs).length === 0) {
-    container.innerHTML = '<p class="text-base-content/60 text-center py-4">Aucun chef</p>';
-    return;
-  }
-
-  container.innerHTML = Object.entries(chefs).map(([id, chef]) => `
-    <div class="card bg-base-200">
-      <div class="card-body p-4">
-        <div class="flex justify-between items-center">
-          <div>
-            <div class="font-bold">${chef.nom || chef.username}</div>
-            <div class="text-sm text-base-content/60">@${chef.username}</div>
-          </div>
-          <div class="flex gap-2">
-            <button class="btn btn-sm btn-ghost" onclick="editEmploye('chef', '${id}')">✏️</button>
-            <button class="btn btn-sm btn-ghost text-error" onclick="deleteEmploye('chef', '${id}')">🗑️</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  `).join('');
-}
-
-function renderLivreurs() {
-  const container = document.getElementById('livreursContainer');
-  const livreurs = configData.livreurs || {};
-  
-  if (Object.keys(livreurs).length === 0) {
-    container.innerHTML = '<p class="text-base-content/60 text-center py-4">Aucun livreur</p>';
-    return;
-  }
-
-  container.innerHTML = Object.entries(livreurs).map(([id, livreur]) => `
-    <div class="card bg-base-200">
-      <div class="card-body p-4">
-        <div class="flex justify-between items-center">
-          <div>
-            <div class="font-bold">${livreur.nom || livreur.username}</div>
-            <div class="text-sm text-base-content/60">@${livreur.username}</div>
-          </div>
-          <div class="flex gap-2">
-            <button class="btn btn-sm btn-ghost" onclick="editEmploye('livreur', '${id}')">✏️</button>
-            <button class="btn btn-sm btn-ghost text-error" onclick="deleteEmploye('livreur', '${id}')">🗑️</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  `).join('');
-}
-
-function renderCaissiers() {
-  const container = document.getElementById('caissiersContainer');
-  const caissiers = configData.caissiers || {};
-  
-  if (Object.keys(caissiers).length === 0) {
-    container.innerHTML = '<p class="text-base-content/60 text-center py-4">Aucun caissier</p>';
-    return;
-  }
-
-  container.innerHTML = Object.entries(caissiers).map(([id, caissier]) => `
-    <div class="card bg-base-200">
-      <div class="card-body p-4">
-        <div class="flex justify-between items-center">
-          <div>
-            <div class="font-bold">${caissier.nom || caissier.username}</div>
-            <div class="text-sm text-base-content/60">@${caissier.username}</div>
-          </div>
-          <div class="flex gap-2">
-            <button class="btn btn-sm btn-ghost" onclick="editEmploye('caissier', '${id}')">✏️</button>
-            <button class="btn btn-sm btn-ghost text-error" onclick="deleteEmploye('caissier', '${id}')">🗑️</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  `).join('');
-}
-
-// Ouvrir modal ajout
-window.openAddEmployeModal = function(type) {
-  currentEmployeType = type;
-  currentEmployeId = null;
-  
-  const titles = {
-    'chef': 'Ajouter un chef',
-    'livreur': 'Ajouter un livreur',
-    'caissier': 'Ajouter un caissier'
-  };
-  
-  document.getElementById('employeModalTitle').textContent = titles[type];
-  document.getElementById('employeNom').value = '';
-  document.getElementById('employeUsername').value = '';
-  document.getElementById('employePassword').value = '';
-  
-  employeModal.showModal();
-};
-
-// Éditer employé
-window.editEmploye = function(type, id) {
-  currentEmployeType = type;
-  currentEmployeId = id;
-  
-  const pluralTypes = { 'chef': 'chefs', 'livreur': 'livreurs', 'caissier': 'caissiers' };
-  const employe = configData[pluralTypes[type]][id];
-  
-  const titles = {
-    'chef': 'Modifier le chef',
-    'livreur': 'Modifier le livreur',
-    'caissier': 'Modifier le caissier'
-  };
-  
-  document.getElementById('employeModalTitle').textContent = titles[type];
-  document.getElementById('employeNom').value = employe.nom || '';
-  document.getElementById('employeUsername').value = employe.username || '';
-  document.getElementById('employePassword').value = ''; // Ne pas afficher l'ancien mdp
-  
-  employeModal.showModal();
-};
-
-// ✅ CORRIGÉ: Supprimer employé AVEC api.config.update()
-window.deleteEmploye = async function(type, id) {
-  const pluralTypes = { 'chef': 'chefs', 'livreur': 'livreurs', 'caissier': 'caissiers' };
-  const employe = configData[pluralTypes[type]][id];
-  
-  if (!confirm(`Supprimer ${employe.nom || employe.username} ?`)) return;
-  
-  delete configData[pluralTypes[type]][id];
-  
-  try {
-    await api.config.update(configData);  // ✅ Utilise api.ts au lieu de fetch direct
-    renderEmployes();
-    alert('Employé supprimé');
-  } catch (error) {
-    console.error('Erreur suppression:', error);
-    alert('Erreur lors de la suppression');
-  }
-};
-
-// ✅ CORRIGÉ: Sauvegarder employé AVEC api.config.update()
-document.getElementById('saveEmployeBtn').addEventListener('click', async () => {
-  const nom = document.getElementById('employeNom').value.trim();
-  const username = document.getElementById('employeUsername').value.trim();
-  const password = document.getElementById('employePassword').value;
-  
-  if (!nom || !username) {
-    alert('Nom et identifiant sont obligatoires');
-    return;
-  }
-  
-  if (!currentEmployeId && !password) {
-    alert('Mot de passe obligatoire pour un nouvel employé');
-    return;
-  }
-  
-  const pluralTypes = { 'chef': 'chefs', 'livreur': 'livreurs', 'caissier': 'caissiers' };
-  const typeKey = pluralTypes[currentEmployeType];
-  
-  if (!configData[typeKey]) configData[typeKey] = {};
-  
-  // Générer ID si nouveau
-  const employeId = currentEmployeId || `${currentEmployeType}${Date.now()}`;
-  
-  // Créer/modifier employé
-  configData[typeKey][employeId] = {
-    nom: nom,
-    username: username,
-    ...(password && { password: password }), // Ne change le mdp que s'il est fourni
-    ...(configData[typeKey][employeId]?.password && !password && { password: configData[typeKey][employeId].password }) // Garde l'ancien si vide
-  };
-  
-  try {
-    await api.config.update(configData);  // ✅ Utilise api.ts au lieu de fetch direct
-    employeModal.close();
-    renderEmployes();
-    alert('Employé enregistré');
-  } catch (error) {
-    console.error('Erreur sauvegarde:', error);
-    alert('Erreur lors de la sauvegarde');
-  }
-});
-
-  
-  loadConfig();
+  // ── Init ──────────────────────────────────────
+  document.addEventListener('astro:page-load', () => void loadConfig());
+  void loadConfig();
 </script>

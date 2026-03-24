@@ -1,46 +1,37 @@
 ---
 // src/pages/admin/commandes.astro
 import AdminLayout from '../../layouts/AdminLayout.astro';
-
 export const prerender = false;
 
-// Vérification auth côté serveur
 const user = Astro.locals.user;
-if (!user || !user.roles.includes('admin')) {
-  return Astro.redirect('/login');
-}
+if (!user?.roles.includes('admin')) return Astro.redirect('/login');
+
+const apiBaseUrl: string = import.meta.env.PUBLIC_API_URL ?? 'http://127.0.0.1:5000/api';
 ---
 
 <AdminLayout title="Commandes">
-  
-  <div class="mb-6">
-    <div class="flex justify-between items-start">
-      <div>
-        <h1 class="text-3xl font-bold">Gestion des commandes</h1>
-        <p class="text-base-content/60">Consultez et gérez toutes vos commandes</p>
-      </div>
-      <div class="flex items-center gap-2">
-        <span id="refreshIndicator" class="text-sm text-base-content/60 hidden">
-          🔄 Actualisation...
-        </span>
-        <button id="toggleAutoRefresh" class="btn btn-sm btn-ghost gap-2">
-          <span id="autoRefreshIcon">🔄</span>
-          <span id="autoRefreshText">Auto-refresh ON</span>
-        </button>
-      </div>
+
+  <div class="mb-6 flex justify-between items-start flex-wrap gap-3">
+    <div>
+      <h1 class="text-3xl font-bold">Commandes</h1>
+      <p class="text-base-content/60">Consultez et gérez toutes vos commandes</p>
+    </div>
+    <div class="flex items-center gap-2">
+      <span id="refreshIndicator" class="text-xs text-base-content/50 hidden">Actualisation…</span>
+      <button id="toggleAutoRefresh" class="btn btn-sm btn-ghost gap-1">
+        <span id="arIcon">🔄</span>
+        <span id="arText" class="text-xs">Auto ON</span>
+      </button>
     </div>
   </div>
 
   <!-- Filtres -->
-  <div class="card bg-base-100 shadow-lg mb-6">
-    <div class="card-body">
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        
+  <div class="card bg-base-100 shadow-lg mb-5">
+    <div class="card-body py-4">
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div class="form-control">
-          <label class="label">
-            <span class="label-text">Statut</span>
-          </label>
-          <select class="select select-bordered" id="filterStatus">
+          <label class="label py-1"><span class="label-text text-xs">Statut</span></label>
+          <select class="select select-bordered select-sm" id="filterStatus">
             <option value="">Tous</option>
             <option value="nouvelle">Nouvelle</option>
             <option value="en_preparation">En préparation</option>
@@ -51,69 +42,52 @@ if (!user || !user.roles.includes('admin')) {
             <option value="annulee">Annulée</option>
           </select>
         </div>
-
         <div class="form-control">
-          <label class="label">
-            <span class="label-text">Période</span>
-          </label>
-          <select class="select select-bordered" id="filterPeriod">
+          <label class="label py-1"><span class="label-text text-xs">Période</span></label>
+          <select class="select select-bordered select-sm" id="filterPeriod">
             <option value="all">Toutes</option>
             <option value="today">Aujourd'hui</option>
             <option value="week">Cette semaine</option>
             <option value="month">Ce mois</option>
-            <option value="year">Cette année</option>
           </select>
         </div>
-
         <div class="form-control">
-          <label class="label">
-            <span class="label-text">Paiement</span>
-          </label>
-          <select class="select select-bordered" id="filterPayment">
+          <label class="label py-1"><span class="label-text text-xs">Paiement</span></label>
+          <select class="select select-bordered select-sm" id="filterPayment">
             <option value="">Tous</option>
             <option value="en_ligne">En ligne</option>
             <option value="comptoir">Au comptoir</option>
             <option value="reception">À la réception</option>
           </select>
         </div>
-
         <div class="form-control">
-          <label class="label">
-            <span class="label-text">Tri</span>
-          </label>
-          <select class="select select-bordered" id="filterSort">
-            <option value="recent">Plus récent → ancien</option>
-            <option value="oldest">Plus ancien → récent</option>
+          <label class="label py-1"><span class="label-text text-xs">Tri</span></label>
+          <select class="select select-bordered select-sm" id="filterSort">
+            <option value="recent">Plus récent</option>
+            <option value="oldest">Plus ancien</option>
           </select>
         </div>
-
       </div>
-
-      <div class="flex justify-between items-center mt-4">
-        <div class="text-sm text-base-content/60">
-          <span id="totalCount">0</span> commande(s) trouvée(s)
-        </div>
-        <button class="btn btn-ghost btn-sm" id="resetFilters">
-          Réinitialiser les filtres
-        </button>
+      <div class="flex justify-between items-center mt-3">
+        <p class="text-xs text-base-content/50"><span id="totalCount">0</span> commande(s)</p>
+        <button class="btn btn-ghost btn-xs" id="resetFilters">Réinitialiser</button>
       </div>
     </div>
   </div>
 
   <!-- Actions groupées -->
-  <div id="bulkActions" class="card bg-base-100 shadow-lg mb-6 hidden">
-    <div class="card-body">
+  <div id="bulkActions" class="card bg-base-100 shadow-lg mb-5 hidden">
+    <div class="card-body py-3">
       <div class="flex flex-wrap gap-2 items-center">
-        <span class="font-bold"><span id="selectedCount">0</span> sélectionnée(s)</span>
-        <div class="divider divider-horizontal"></div>
-        <button class="btn btn-sm btn-primary" id="exportCSV">
-          Export CSV
+        <span class="text-sm font-bold"><span id="selectedCount">0</span> sélectionnée(s)</span>
+        <div class="divider divider-horizontal mx-0"></div>
+        <button class="btn btn-sm btn-outline gap-1" id="exportCSV">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          CSV
         </button>
-        <button class="btn btn-sm btn-primary" id="exportPDF">
-          Export PDF
-        </button>
-        <button class="btn btn-sm btn-error" id="deleteSelected">
-          Supprimer la sélection
+        <button class="btn btn-sm btn-error gap-1" id="deleteSelected">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+          Supprimer
         </button>
       </div>
     </div>
@@ -121,18 +95,16 @@ if (!user || !user.roles.includes('admin')) {
 
   <!-- Loader -->
   <div id="loader" class="flex justify-center py-20">
-    <span class="loading loading-spinner loading-lg"></span>
+    <span class="loading loading-spinner loading-lg text-primary"></span>
   </div>
 
   <!-- Tableau -->
   <div id="tableContainer" class="card bg-base-100 shadow-lg hidden">
-    <div class="card-body overflow-x-auto">
-      <table class="table table-zebra">
+    <div class="card-body p-0 overflow-x-auto">
+      <table class="table table-zebra table-sm">
         <thead>
           <tr>
-            <th>
-              <input type="checkbox" class="checkbox checkbox-sm" id="selectAll" />
-            </th>
+            <th><input type="checkbox" class="checkbox checkbox-sm" id="selectAll" /></th>
             <th>Numéro</th>
             <th>Date</th>
             <th>Client</th>
@@ -143,442 +115,356 @@ if (!user || !user.roles.includes('admin')) {
             <th>Actions</th>
           </tr>
         </thead>
-        <tbody id="commandesTable">
-        </tbody>
+        <tbody id="commandesTable"></tbody>
       </table>
     </div>
   </div>
 
-  <!-- Message vide -->
+  <!-- Vide -->
   <div id="emptyState" class="hidden text-center py-20">
-    <div class="text-6xl mb-4">📦</div>
-    <h3 class="text-xl font-bold mb-2">Aucune commande</h3>
-    <p class="text-base-content/60">Aucune commande ne correspond à vos filtres</p>
+    <span class="text-6xl" aria-hidden="true">📦</span>
+    <h3 class="text-xl font-bold mt-3 mb-1">Aucune commande</h3>
+    <p class="text-base-content/60 text-sm">Aucune commande ne correspond aux filtres</p>
   </div>
 
+  <!-- Toast -->
+  <div id="toast-container" class="toast toast-top toast-end z-50" aria-live="polite"></div>
+
+  <!-- Modal confirmation suppression -->
+  <dialog id="confirmDeleteModal" class="modal modal-bottom sm:modal-middle">
+    <div class="modal-box">
+      <h3 class="font-bold text-lg">Confirmer la suppression</h3>
+      <p class="py-3 text-sm text-base-content/70" id="confirmDeleteMsg"></p>
+      <div class="modal-action">
+        <form method="dialog"><button class="btn btn-ghost btn-sm">Annuler</button></form>
+        <button id="confirmDeleteYes" class="btn btn-error btn-sm">Supprimer</button>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>fermer</button></form>
+  </dialog>
+
+  <meta name="api-url" content={apiBaseUrl} />
 </AdminLayout>
 
 <script>
-// ==========================================
-// 🚀 Imports
-// ==========================================
-import { api } from '../../lib/api';
-
-// ==========================================
-// Variables Globales
-// ==========================================
-let allCommandes = [];
-let filteredCommandes = [];
-let selectedIds = new Set();
-let autoRefreshInterval = null;
-let autoRefreshEnabled = true;
-
-// ==========================================
-// Utilitaires
-// ==========================================
-function formatPrice(price) {
-  return new Intl.NumberFormat('fr-BE', {
-    style: 'currency',
-    currency: 'EUR'
-  }).format(price);
-}
-
-function formatDate(dateStr) {
-  const date = new Date(dateStr);
-  return new Intl.DateTimeFormat('fr-BE', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  }).format(date);
-}
-
-function getStatusBadge(statut) {
-  const badges = {
-    'nouvelle': 'badge-warning',
-    'en_preparation': 'badge-info',
-    'prete': 'badge-success',
-    'en_livraison': 'badge-primary',
-    'livree': 'badge-success',
-    'terminee': 'badge-ghost',
-    'annulee': 'badge-error'
-  };
-  return badges[statut] || 'badge-ghost';
-}
-
-function getStatusLabel(statut) {
-  const labels = {
-    'nouvelle': 'Nouvelle',
-    'en_preparation': 'En préparation',
-    'prete': 'Prête',
-    'en_livraison': 'En livraison',
-    'livree': 'Livrée',
-    'terminee': 'Terminée',
-    'annulee': 'Annulée'
-  };
-  return labels[statut] || statut;
-}
-
-// ==========================================
-// Chargement Config & Thème
-// ==========================================
-async function loadConfig() {
-  try {
-    const config = await api.config.get();
-    
-    if (config.theme?.daisy) {
-      document.documentElement.setAttribute('data-theme', config.theme.daisy);
-    }
-    
-    if (config.theme?.logo) {
-      const logoUrl = api.images.getUrl(config.theme.logo);
-      const favicon = document.getElementById('favicon');
-      if (favicon) favicon.href = logoUrl;
-    }
-  } catch (error) {
-    console.error('❌ Erreur config:', error);
+  // ── Types ─────────────────────────────────────
+  interface Commande {
+    id: string; numero: string; date_creation: string;
+    statut: string; type?: string; prix_total: number;
+    client?: { nom?: string; prenom?: string };
+    paiement?: { mode?: string };
   }
-}
 
-// ==========================================
-// Chargement Commandes
-// ==========================================
-async function loadCommandes(silent = false) {
-  try {
-    console.log('🔄 Chargement commandes...');
-    
-    // ✅ Utilise api.ts (avec token auto)
-    const data = await api.commandes.list();
-    
-    allCommandes = data.commandes || [];
-    
-    console.log(`✅ ${allCommandes.length} commandes chargées`);
-    
-    applyFilters();
-    
-  } catch (error) {
-    console.error('❌ Erreur chargement commandes:', error);
-    
-    // Gestion erreur auth
-    if (error.message.includes('Token') || error.message.includes('401')) {
-      alert('Session expirée, veuillez vous reconnecter');
-      window.location.href = '/login';
+  // ── État ──────────────────────────────────────
+  let allCommandes: Commande[] = [];
+  let filtered: Commande[]    = [];
+  let selectedIds              = new Set<string>();
+  let autoRefreshEnabled       = true;
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
+  let pendingDeleteIds: string[] = [];
+
+  // ── Helpers ───────────────────────────────────
+  function getApiBase(): string {
+    return document.querySelector<HTMLMetaElement>('meta[name="api-url"]')?.content
+      ?? 'http://127.0.0.1:5000/api';
+  }
+
+  function getToken(): string {
+    const c = document.cookie.split(';').find(x => x.trim().startsWith('admin_token='));
+    return c ? decodeURIComponent(c.split('=')[1].trim()) : '';
+  }
+
+  function authHeaders(): Record<string,string> {
+    return { 'Authorization': `Bearer ${getToken()}`, 'Content-Type': 'application/json' };
+  }
+
+  function esc(v: unknown): string {
+    const d = document.createElement('div');
+    d.textContent = String(v ?? '');
+    return d.innerHTML;
+  }
+
+  const fmt = (n: number) =>
+    new Intl.NumberFormat('fr-BE', { style: 'currency', currency: 'EUR' }).format(n);
+
+  function fmtDate(s: string): string {
+    try {
+      return new Intl.DateTimeFormat('fr-BE', {
+        day:'2-digit', month:'2-digit', year:'numeric',
+        hour:'2-digit', minute:'2-digit',
+      }).format(new Date(s));
+    } catch { return s; }
+  }
+
+  function showToast(msg: string, type: 'success'|'error'|'info'|'warning' = 'info') {
+    const c = document.getElementById('toast-container')!;
+    const el = document.createElement('div');
+    el.className = `alert alert-${type} shadow-md text-sm py-2 px-4 rounded-xl`;
+    el.textContent = msg;
+    c.appendChild(el);
+    setTimeout(() => el.remove(), 3500);
+  }
+
+  const STATUS_BADGE: Record<string,string> = {
+    nouvelle:'badge-warning', en_preparation:'badge-info', prete:'badge-success',
+    en_livraison:'badge-primary', livree:'badge-success', terminee:'badge-ghost', annulee:'badge-error',
+  };
+  const STATUS_LABEL: Record<string,string> = {
+    nouvelle:'Nouvelle', en_preparation:'En préparation', prete:'Prête',
+    en_livraison:'En livraison', livree:'Livrée', terminee:'Terminée', annulee:'Annulée',
+  };
+
+  // ── Chargement ────────────────────────────────
+  async function loadCommandes(silent = false) {
+    if (!silent) {
+      document.getElementById('loader')!.classList.remove('hidden');
+      document.getElementById('tableContainer')!.classList.add('hidden');
+      document.getElementById('emptyState')!.classList.add('hidden');
+    }
+
+    try {
+      const res = await fetch(`${getApiBase()}/commandes?per_page=200`, { headers: authHeaders() });
+      if (res.status === 401) { window.location.href = '/login?expired=1'; return; }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json() as { commandes: Commande[] };
+      allCommandes = data.commandes ?? [];
+      applyFilters();
+    } catch (err: unknown) {
+      if (!silent) {
+        document.getElementById('loader')!.innerHTML = `
+          <div class="alert alert-error max-w-md">
+            <span>Erreur : ${esc(err instanceof Error ? err.message : String(err))}</span>
+            <button class="btn btn-sm btn-ghost ml-2" onclick="loadCommandes()">Réessayer</button>
+          </div>`;
+      }
+    }
+  }
+
+  (window as any).loadCommandes = loadCommandes;
+
+  // ── Filtrage ──────────────────────────────────
+  function applyFilters() {
+    const status  = (document.getElementById('filterStatus')  as HTMLSelectElement).value;
+    const period  = (document.getElementById('filterPeriod')  as HTMLSelectElement).value;
+    const payment = (document.getElementById('filterPayment') as HTMLSelectElement).value;
+    const sort    = (document.getElementById('filterSort')    as HTMLSelectElement).value;
+
+    const now = new Date();
+
+    filtered = allCommandes.filter(c => {
+      if (status  && c.statut          !== status)  return false;
+      if (payment && c.paiement?.mode  !== payment) return false;
+      if (period !== 'all') {
+        const d = new Date(c.date_creation);
+        if (period === 'today' && d.toDateString() !== now.toDateString()) return false;
+        if (period === 'week'  && d < new Date(now.getTime() - 7*86400000)) return false;
+        if (period === 'month' && (d.getMonth() !== now.getMonth() || d.getFullYear() !== now.getFullYear())) return false;
+      }
+      return true;
+    });
+
+    filtered.sort((a, b) => {
+      const diff = new Date(b.date_creation).getTime() - new Date(a.date_creation).getTime();
+      return sort === 'oldest' ? -diff : diff;
+    });
+
+    renderTable();
+  }
+
+  // ── Rendu tableau ─────────────────────────────
+  function renderTable() {
+    const tbody         = document.getElementById('commandesTable')!;
+    const loader        = document.getElementById('loader')!;
+    const tableEl       = document.getElementById('tableContainer')!;
+    const emptyEl       = document.getElementById('emptyState')!;
+
+    document.getElementById('totalCount')!.textContent = String(filtered.length);
+    loader.classList.add('hidden');
+
+    if (!filtered.length) {
+      tableEl.classList.add('hidden');
+      emptyEl.classList.remove('hidden');
       return;
     }
-    
-    document.getElementById('loader').innerHTML = `
-      <div class="alert alert-error">
-        <span>Erreur de chargement des commandes</span>
-      </div>
-    `;
-  }
-}
 
-// ==========================================
-// Filtrage & Affichage
-// ==========================================
-function applyFilters() {
-  const statusFilter = document.getElementById('filterStatus').value;
-  const periodFilter = document.getElementById('filterPeriod').value;
-  const paymentFilter = document.getElementById('filterPayment').value;
-  const sortFilter = document.getElementById('filterSort').value;
+    emptyEl.classList.add('hidden');
+    tableEl.classList.remove('hidden');
+    tbody.innerHTML = '';
 
-  filteredCommandes = allCommandes.filter(cmd => {
-    if (statusFilter && cmd.statut !== statusFilter) return false;
-    if (paymentFilter && cmd.paiement?.mode !== paymentFilter) return false;
-    
-    if (periodFilter !== 'all') {
-      const cmdDate = new Date(cmd.date_creation);
-      const now = new Date();
-      
-      if (periodFilter === 'today') {
-        if (cmdDate.toDateString() !== now.toDateString()) return false;
-      } else if (periodFilter === 'week') {
-        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-        if (cmdDate < weekAgo) return false;
-      } else if (periodFilter === 'month') {
-        if (cmdDate.getMonth() !== now.getMonth() || cmdDate.getFullYear() !== now.getFullYear()) return false;
-      } else if (periodFilter === 'year') {
-        if (cmdDate.getFullYear() !== now.getFullYear()) return false;
-      }
-    }
-    
-    return true;
-  });
-
-  if (sortFilter === 'recent') {
-    filteredCommandes.sort((a, b) => new Date(b.date_creation) - new Date(a.date_creation));
-  } else {
-    filteredCommandes.sort((a, b) => new Date(a.date_creation) - new Date(b.date_creation));
-  }
-
-  renderTable();
-}
-
-function renderTable() {
-  const table = document.getElementById('commandesTable');
-  const totalCount = document.getElementById('totalCount');
-  const loader = document.getElementById('loader');
-  const tableContainer = document.getElementById('tableContainer');
-  const emptyState = document.getElementById('emptyState');
-
-  totalCount.textContent = filteredCommandes.length;
-  loader.classList.add('hidden');
-
-  if (filteredCommandes.length === 0) {
-    tableContainer.classList.add('hidden');
-    emptyState.classList.remove('hidden');
-    return;
-  }
-
-  emptyState.classList.add('hidden');
-  tableContainer.classList.remove('hidden');
-
-  table.innerHTML = filteredCommandes.map(cmd => `
-    <tr>
-      <td>
-        <input type="checkbox" class="checkbox checkbox-sm cmd-checkbox" data-id="${cmd.id}" />
-      </td>
-      <td>
-        <span class="font-mono font-bold">${cmd.numero}</span>
-      </td>
-      <td>${formatDate(cmd.date_creation)}</td>
-      <td>${cmd.client?.nom || 'N/A'} ${cmd.client?.prenom || ''}</td>
-      <td>
-        <span class="badge badge-sm">${cmd.type || 'N/A'}</span>
-      </td>
-      <td class="font-bold">${formatPrice(cmd.prix_total)}</td>
-      <td>${cmd.paiement?.mode || 'N/A'}</td>
-      <td>
-        <span class="badge ${getStatusBadge(cmd.statut)} badge-sm">
-          ${getStatusLabel(cmd.statut)}
-        </span>
-      </td>
-      <td>
-        <div class="join">
-          <button class="btn btn-xs btn-ghost join-item edit-btn" data-id="${cmd.id}">
-            ✏️
-          </button>
-          <button class="btn btn-xs btn-ghost join-item delete-btn" data-id="${cmd.id}">
-            🗑️
-          </button>
-        </div>
-      </td>
-    </tr>
-  `).join('');
-
-  // Restaurer les sélections après le refresh
-  document.querySelectorAll('.cmd-checkbox').forEach(checkbox => {
-    if (selectedIds.has(checkbox.dataset.id)) {
-      checkbox.checked = true;
-    }
-  });
-
-  attachCheckboxListeners();
-  attachActionButtons();
-}
-
-// ==========================================
-// Gestion des checkboxes
-// ==========================================
-function attachCheckboxListeners() {
-  document.querySelectorAll('.cmd-checkbox').forEach(checkbox => {
-    checkbox.addEventListener('change', (e) => {
-      const id = e.target.dataset.id;
-      if (e.target.checked) {
-        selectedIds.add(id);
-      } else {
-        selectedIds.delete(id);
-      }
-      updateSelection();
+    filtered.forEach(cmd => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><input type="checkbox" class="checkbox checkbox-sm cmd-cb" data-id="${esc(cmd.id)}"
+          ${selectedIds.has(cmd.id) ? 'checked' : ''} /></td>
+        <td><span class="font-mono font-bold text-sm">${esc(cmd.numero)}</span></td>
+        <td class="text-xs text-base-content/70">${fmtDate(cmd.date_creation)}</td>
+        <td class="text-sm">${esc(cmd.client?.prenom ?? '')} ${esc(cmd.client?.nom ?? 'N/A')}</td>
+        <td><span class="badge badge-ghost badge-sm">${esc(cmd.type ?? '?')}</span></td>
+        <td class="font-bold tabular-nums text-sm">${fmt(cmd.prix_total)}</td>
+        <td class="text-xs text-base-content/60">${esc(cmd.paiement?.mode ?? '—')}</td>
+        <td><span class="badge ${STATUS_BADGE[cmd.statut] ?? 'badge-ghost'} badge-sm">
+          ${esc(STATUS_LABEL[cmd.statut] ?? cmd.statut)}</span></td>
+        <td>
+          <div class="flex gap-1">
+            <button class="btn btn-xs btn-ghost edit-btn" data-id="${esc(cmd.id)}" aria-label="Modifier">✏️</button>
+            <button class="btn btn-xs btn-ghost text-error del-btn" data-id="${esc(cmd.id)}"
+              data-num="${esc(cmd.numero)}" aria-label="Supprimer">🗑️</button>
+          </div>
+        </td>
+      `;
+      tbody.appendChild(tr);
     });
-  });
 
-  document.getElementById('selectAll').addEventListener('change', (e) => {
-    const checkboxes = document.querySelectorAll('.cmd-checkbox');
-    checkboxes.forEach(cb => {
-      cb.checked = e.target.checked;
-      if (e.target.checked) {
-        selectedIds.add(cb.dataset.id);
-      } else {
-        selectedIds.delete(cb.dataset.id);
-      }
+    // Checkboxes
+    tbody.querySelectorAll<HTMLInputElement>('.cmd-cb').forEach(cb => {
+      cb.addEventListener('change', () => {
+        cb.checked ? selectedIds.add(cb.dataset.id!) : selectedIds.delete(cb.dataset.id!);
+        updateBulk();
+      });
     });
-    updateSelection();
-  });
-}
 
-function updateSelection() {
-  const bulkActions = document.getElementById('bulkActions');
-  const selectedCount = document.getElementById('selectedCount');
-  
-  selectedCount.textContent = selectedIds.size;
-  
-  if (selectedIds.size > 0) {
-    bulkActions.classList.remove('hidden');
-  } else {
-    bulkActions.classList.add('hidden');
+    // Edit → page détail
+    tbody.querySelectorAll<HTMLButtonElement>('.edit-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        window.location.href = `/admin/commandes/edit?id=${encodeURIComponent(btn.dataset.id!)}`;
+      });
+    });
+
+    // Delete → modal de confirmation
+    tbody.querySelectorAll<HTMLButtonElement>('.del-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        pendingDeleteIds = [btn.dataset.id!];
+        document.getElementById('confirmDeleteMsg')!.textContent =
+          `Supprimer la commande ${btn.dataset.num} ?`;
+        (document.getElementById('confirmDeleteModal') as HTMLDialogElement).showModal();
+      });
+    });
   }
-}
 
-// ==========================================
-// Actions sur les commandes
-// ==========================================
-function attachActionButtons() {
-  document.querySelectorAll('.edit-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const id = btn.dataset.id;
-      window.location.href = `/admin/commandes/edit?id=${id}`;
+  // ── Select all ────────────────────────────────
+  document.getElementById('selectAll')?.addEventListener('change', (e) => {
+    const checked = (e.target as HTMLInputElement).checked;
+    document.querySelectorAll<HTMLInputElement>('.cmd-cb').forEach(cb => {
+      cb.checked = checked;
+      checked ? selectedIds.add(cb.dataset.id!) : selectedIds.delete(cb.dataset.id!);
     });
+    updateBulk();
   });
 
-  document.querySelectorAll('.delete-btn').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const id = btn.dataset.id;
-      if (confirm('Supprimer cette commande ?')) {
-        await deleteCommande(id);
-      }
-    });
-  });
-}
-
-async function deleteCommande(id) {
-  try {
-    console.log(`🗑️ Suppression commande: ${id}`);
-    
-    // ✅ Utilise api.ts
-    await api.commandes.delete(id);
-    
-    console.log('✅ Commande supprimée');
-    
-    await loadCommandes();
-    
-  } catch (error) {
-    console.error('❌ Erreur suppression:', error);
-    
-    if (error.message.includes('Token') || error.message.includes('401')) {
-      alert('Session expirée, veuillez vous reconnecter');
-      window.location.href = '/login';
-    } else {
-      alert('Erreur lors de la suppression');
-    }
+  function updateBulk() {
+    document.getElementById('selectedCount')!.textContent = String(selectedIds.size);
+    document.getElementById('bulkActions')!.classList.toggle('hidden', selectedIds.size === 0);
   }
-}
 
-// ==========================================
-// Filtres & Exports
-// ==========================================
-document.getElementById('filterStatus').addEventListener('change', applyFilters);
-document.getElementById('filterPeriod').addEventListener('change', applyFilters);
-document.getElementById('filterPayment').addEventListener('change', applyFilters);
-document.getElementById('filterSort').addEventListener('change', applyFilters);
-
-document.getElementById('resetFilters').addEventListener('click', () => {
-  document.getElementById('filterStatus').value = '';
-  document.getElementById('filterPeriod').value = 'all';
-  document.getElementById('filterPayment').value = '';
-  document.getElementById('filterSort').value = 'recent';
-  applyFilters();
-});
-
-document.getElementById('deleteSelected').addEventListener('click', async () => {
-  if (selectedIds.size === 0) return;
-  
-  if (confirm(`Supprimer ${selectedIds.size} commande(s) ?`)) {
-    for (const id of selectedIds) {
-      await deleteCommande(id);
-    }
+  // ── Suppression ───────────────────────────────
+  document.getElementById('confirmDeleteYes')?.addEventListener('click', async () => {
+    (document.getElementById('confirmDeleteModal') as HTMLDialogElement).close();
+    for (const id of pendingDeleteIds) await doDelete(id);
+    pendingDeleteIds = [];
     selectedIds.clear();
-    updateSelection();
-  }
-});
-
-document.getElementById('exportCSV').addEventListener('click', () => {
-  const selected = filteredCommandes.filter(cmd => selectedIds.has(cmd.id));
-  const csv = [
-    ['Numéro', 'Date', 'Client', 'Type', 'Montant', 'Statut', 'Paiement'].join(','),
-    ...selected.map(cmd => [
-      cmd.numero,
-      cmd.date_creation,
-      `${cmd.client?.nom || ''} ${cmd.client?.prenom || ''}`,
-      cmd.type,
-      cmd.prix_total,
-      cmd.statut,
-      cmd.paiement?.mode || ''
-    ].join(','))
-  ].join('\n');
-
-  const blob = new Blob([csv], { type: 'text/csv' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `commandes_${Date.now()}.csv`;
-  a.click();
-});
-
-document.getElementById('exportPDF').addEventListener('click', () => {
-  alert('Export PDF à implémenter avec une bibliothèque comme jsPDF');
-});
-
-// ==========================================
-// Auto-Refresh
-// ==========================================
-function startAutoRefresh() {
-  if (autoRefreshInterval) return;
-  
-  autoRefreshInterval = setInterval(async () => {
-    const indicator = document.getElementById('refreshIndicator');
-    indicator.classList.remove('hidden');
-    
+    updateBulk();
     await loadCommandes(true);
-    
-    setTimeout(() => {
-      indicator.classList.add('hidden');
-    }, 1000);
-  }, 10000); // 10 secondes
-}
+  });
 
-function stopAutoRefresh() {
-  if (autoRefreshInterval) {
-    clearInterval(autoRefreshInterval);
-    autoRefreshInterval = null;
+  async function doDelete(id: string) {
+    try {
+      const res = await fetch(`${getApiBase()}/commandes/${encodeURIComponent(id)}`, {
+        method: 'DELETE', headers: authHeaders(),
+      });
+      if (res.status === 401) { window.location.href = '/login?expired=1'; return; }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      showToast('Commande supprimée', 'success');
+    } catch (err: unknown) {
+      showToast(`Erreur suppression : ${err instanceof Error ? err.message : ''}`, 'error');
+    }
   }
-}
 
-function toggleAutoRefresh() {
-  autoRefreshEnabled = !autoRefreshEnabled;
-  
-  const icon = document.getElementById('autoRefreshIcon');
-  const text = document.getElementById('autoRefreshText');
-  const btn = document.getElementById('toggleAutoRefresh');
-  
-  if (autoRefreshEnabled) {
-    startAutoRefresh();
-    icon.textContent = '🔄';
-    text.textContent = 'Auto-refresh ON';
-    btn.classList.remove('btn-error');
-    btn.classList.add('btn-ghost');
-  } else {
-    stopAutoRefresh();
-    icon.textContent = '⏸️';
-    text.textContent = 'Auto-refresh OFF';
-    btn.classList.remove('btn-ghost');
-    btn.classList.add('btn-error');
+  // ── Suppression groupée ───────────────────────
+  document.getElementById('deleteSelected')?.addEventListener('click', () => {
+    if (!selectedIds.size) return;
+    pendingDeleteIds = [...selectedIds];
+    document.getElementById('confirmDeleteMsg')!.textContent =
+      `Supprimer ${selectedIds.size} commande(s) ?`;
+    (document.getElementById('confirmDeleteModal') as HTMLDialogElement).showModal();
+  });
+
+  // ── Export CSV ────────────────────────────────
+  document.getElementById('exportCSV')?.addEventListener('click', () => {
+    const rows = filtered.filter(c => selectedIds.has(c.id));
+    if (!rows.length) { showToast('Aucune commande sélectionnée', 'warning'); return; }
+
+    const headers = ['Numéro','Date','Client','Type','Montant','Statut','Paiement'];
+    const lines   = rows.map(c => [
+      c.numero,
+      c.date_creation,
+      `${c.client?.prenom ?? ''} ${c.client?.nom ?? ''}`.trim(),
+      c.type ?? '',
+      c.prix_total,
+      c.statut,
+      c.paiement?.mode ?? '',
+    ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
+
+    const csv  = [headers.join(','), ...lines].join('\n');
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = `commandes_${Date.now()}.csv`;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
+  });
+
+  // ── Filtres ───────────────────────────────────
+  ['filterStatus','filterPeriod','filterPayment','filterSort'].forEach(id => {
+    document.getElementById(id)?.addEventListener('change', applyFilters);
+  });
+
+  document.getElementById('resetFilters')?.addEventListener('click', () => {
+    (document.getElementById('filterStatus')  as HTMLSelectElement).value = '';
+    (document.getElementById('filterPeriod')  as HTMLSelectElement).value = 'all';
+    (document.getElementById('filterPayment') as HTMLSelectElement).value = '';
+    (document.getElementById('filterSort')    as HTMLSelectElement).value = 'recent';
+    applyFilters();
+  });
+
+  // ── Auto-refresh ──────────────────────────────
+  function startPoll() {
+    stopPoll();
+    pollTimer = setInterval(async () => {
+      const ind = document.getElementById('refreshIndicator')!;
+      ind.classList.remove('hidden');
+      await loadCommandes(true);
+      setTimeout(() => ind.classList.add('hidden'), 800);
+    }, 10_000);
   }
-}
 
-document.getElementById('toggleAutoRefresh').addEventListener('click', toggleAutoRefresh);
+  function stopPoll() {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  }
 
-// ==========================================
-// Initialisation
-// ==========================================
-console.log('📦 Gestion Commandes chargée');
+  document.getElementById('toggleAutoRefresh')?.addEventListener('click', () => {
+    autoRefreshEnabled = !autoRefreshEnabled;
+    const icon = document.getElementById('arIcon')!;
+    const text = document.getElementById('arText')!;
+    const btn  = document.getElementById('toggleAutoRefresh')!;
+    if (autoRefreshEnabled) {
+      startPoll();
+      icon.textContent = '🔄'; text.textContent = 'Auto ON';
+      btn.classList.replace('btn-error', 'btn-ghost');
+    } else {
+      stopPoll();
+      icon.textContent = '⏸️'; text.textContent = 'Auto OFF';
+      btn.classList.replace('btn-ghost', 'btn-error');
+    }
+  });
 
-loadConfig();
-loadCommandes();
-startAutoRefresh();
+  // ── Init ──────────────────────────────────────
+  function init() {
+    stopPoll();
+    void loadCommandes();
+    if (autoRefreshEnabled) startPoll();
+  }
 
-// Cleanup
-window.addEventListener('beforeunload', stopAutoRefresh);
+  document.addEventListener('astro:page-load', init);
+  window.addEventListener('beforeunload', stopPoll);
+  init();
 </script>

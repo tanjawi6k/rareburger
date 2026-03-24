@@ -1,324 +1,322 @@
 ---
 // src/pages/stripe-checkout.astro
-// ============================================
-// 💳 CMDOLA - Stripe Checkout (CORRIGÉ)
-// ============================================
-
-import Navbar from '../components/Navbar.astro';
-import '../assets/app.css';
-
-// Pas de prerender car contenu dynamique
 export const prerender = false;
 
-const orderId = Astro.url.searchParams.get('order');
+import Navbar from '../components/Navbar.astro';
+import api from '../lib/api';
+import '../assets/app.css';
 
-if (!orderId) {
-  return Astro.redirect('/cart');
-}
+// Redirect immédiat si pas d'orderId
+const orderId = Astro.url.searchParams.get('order');
+if (!orderId) return Astro.redirect('/cart');
+
+// ─────────────────────────────────────────
+// Thème SSR
+// ─────────────────────────────────────────
+const VALID_THEMES: readonly string[] = [
+  'light','dark','cupcake','bumblebee','emerald','corporate',
+  'synthwave','retro','cyberpunk','valentine','halloween','garden',
+  'forest','aqua','lofi','pastel','fantasy','wireframe','black',
+  'luxury','dracula','cmyk','autumn','business','acid','lemonade',
+  'night','coffee','winter','dim','nord','sunset',
+];
+const cookieTheme = Astro.cookies.get('theme')?.value;
+
+let theme          = 'light';
+let logoUrl        = '/favicon.ico';
+let restaurantName = 'CMDOLA';
+
+try {
+  const configData = await api.config.get() as Record<string, any>;
+  const configTheme = (configData.theme as Record<string,string>|undefined)?.daisy;
+  theme = (cookieTheme && VALID_THEMES.includes(cookieTheme))
+    ? cookieTheme
+    : (configTheme && VALID_THEMES.includes(configTheme) ? configTheme : 'light');
+  const logoFile = (configData.theme as Record<string,string>|undefined)?.logo;
+  logoUrl        = logoFile ? api.images.getUrl(logoFile) : '/favicon.ico';
+  restaurantName = (configData.nom as string|undefined) ?? 'CMDOLA';
+} catch { /* thème par défaut */ }
+
+// Pré-charger la commande SSR pour afficher le résumé sans flash
+let initialOrder: Record<string, any> | null = null;
+try {
+  initialOrder = await api.commandes.getPublic(orderId) as Record<string, any>;
+} catch { /* géré côté client */ }
+
+const initialOrderJson = initialOrder ? JSON.stringify(initialOrder) : 'null';
+const apiBaseUrl: string = import.meta.env.PUBLIC_API_URL ?? 'http://127.0.0.1:5000/api';
 ---
 
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="fr" data-theme={theme}>
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
-  <title>Paiement - CMDOLA</title>
-  <link rel="icon" type="image/png" href="/favicon.ico" id="favicon">
+  <meta name="api-url" content={apiBaseUrl} />
+  <meta name="order-id" content={orderId} />
+  <title>Paiement sécurisé — {restaurantName}</title>
+  <link rel="icon" type="image/png" href={logoUrl} />
+
+  <!-- Anti-FOUC thème -->
+  <script is:inline>
+    (function(){
+      var v=['light','dark','cupcake','bumblebee','emerald','corporate',
+        'synthwave','retro','cyberpunk','valentine','halloween','garden','forest',
+        'aqua','lofi','pastel','fantasy','wireframe','black','luxury','dracula',
+        'cmyk','autumn','business','acid','lemonade','night','coffee','winter',
+        'dim','nord','sunset'];
+      var c=document.cookie.split(';').find(function(x){return x.trim().startsWith('theme=');});
+      var t=c?decodeURIComponent(c.split('=')[1].trim()):null;
+      if(t&&v.indexOf(t)!==-1) document.documentElement.setAttribute('data-theme',t);
+    }());
+  </script>
+
+  <!-- Commande pré-chargée SSR -->
+  <script id="initial-order" type="application/json" set:html={initialOrderJson} />
 </head>
 
-<body class="bg-base-200 min-h-screen">
-  
-  <Navbar />
-  
-  <div class="container mx-auto px-4 py-8">
-    
-    <!-- Chargement -->
-    <div id="loading-section" class="flex flex-col items-center justify-center min-h-[60vh]">
+<body class="bg-base-200" style="min-height:100dvh;min-height:100vh;">
+
+  <header class="sticky top-0 z-40">
+    <Navbar restaurantName={restaurantName} logoUrl={logoUrl} activePage="" />
+  </header>
+
+  <main class="container mx-auto px-4 py-8 max-w-xl">
+
+    <!-- État chargement (affiché par défaut) -->
+    <div id="loading-section" class="flex flex-col items-center justify-center py-20 text-center">
       <span class="loading loading-spinner loading-lg text-primary mb-4"></span>
-      <h2 class="text-2xl font-bold mb-2">Préparation du paiement...</h2>
-      <p class="text-base-content/60">Vous allez être redirigé vers la page de paiement sécurisée</p>
-      <div class="mt-4 text-sm text-base-content/50">
-        <p>🔒 Paiement sécurisé par Stripe</p>
-      </div>
-    </div>
-
-    <!-- Erreur -->
-    <div id="error-section" class="max-w-2xl mx-auto" style="display: none;">
-      <div class="alert alert-error shadow-lg">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 shrink-0 stroke-current" fill="none" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+      <h2 class="text-xl font-bold text-base-content" id="loading-title">Préparation du paiement…</h2>
+      <p class="text-base-content/50 text-sm mt-1">Vous allez être redirigé vers la page de paiement sécurisée</p>
+      <div class="flex items-center gap-2 mt-4 text-xs text-base-content/40">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
         </svg>
-        <div>
-          <h3 class="font-bold">Erreur de paiement</h3>
-          <div id="error-message" class="text-sm"></div>
-        </div>
-      </div>
-      
-      <div class="flex gap-4 mt-6 justify-center">
-        <a href="/cart" class="btn btn-outline">
-          Retour au panier
-        </a>
-        <button id="retry-btn" class="btn btn-primary">
-          Réessayer
-        </button>
+        Paiement sécurisé par Stripe
       </div>
     </div>
 
-    <!-- Récapitulatif (affiché pendant le chargement) -->
-    <div id="summary-section" class="max-w-2xl mx-auto mt-8" style="display: none;">
+    <!-- Résumé commande (affiché pendant le chargement) -->
+    <div id="summary-section" class="mb-6 hidden">
       <div class="card bg-base-100 shadow-sm">
-        <div class="card-body">
-          <h3 class="card-title">Récapitulatif de votre commande</h3>
-          <div class="divider my-2"></div>
-          
-          <div id="order-summary" class="space-y-2">
-            <!-- Rempli par JS -->
-          </div>
-          
-          <div class="divider my-2"></div>
-          
-          <div class="flex justify-between text-lg">
+        <div class="card-body gap-3">
+          <h3 class="font-bold text-base">Récapitulatif</h3>
+          <div class="divider my-0"></div>
+          <div id="order-items" class="space-y-2"></div>
+          <div class="divider my-0"></div>
+          <div class="flex justify-between">
             <span class="font-bold">Total à payer</span>
-            <span id="total-amount" class="font-bold text-primary">0.00€</span>
+            <span id="order-total" class="font-bold text-primary text-lg tabular-nums"></span>
           </div>
         </div>
       </div>
-      
-      <div class="alert alert-info mt-4">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+
+      <div class="alert alert-info text-xs rounded-xl mt-3 py-3">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
         </svg>
-        <div class="text-sm">
-          <p class="font-semibold">Paiement sécurisé</p>
-          <p>Vos informations de paiement sont protégées par Stripe</p>
+        <p>Vos informations de paiement sont chiffrées et protégées par Stripe. Nous ne stockons aucune donnée bancaire.</p>
+      </div>
+    </div>
+
+    <!-- Section erreur (cachée par défaut) -->
+    <div id="error-section" class="hidden">
+      <div class="card bg-base-100 shadow-sm">
+        <div class="card-body items-center text-center gap-4">
+          <span class="text-5xl" aria-hidden="true">⚠️</span>
+          <div>
+            <h2 class="text-xl font-bold">Impossible de lancer le paiement</h2>
+            <p id="error-message" class="text-base-content/60 text-sm mt-2"></p>
+          </div>
+          <div class="flex flex-wrap gap-3 justify-center mt-2">
+            <button id="retry-btn" class="btn btn-primary gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+              </svg>
+              Réessayer
+            </button>
+            <a href="/cart" class="btn btn-outline gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+              </svg>
+              Retour au panier
+            </a>
+          </div>
         </div>
       </div>
     </div>
 
-  </div>
+  </main>
 
 </body>
 </html>
 
+<style>
+  @media (pointer: coarse) { button, a { min-height: 44px; } }
+</style>
+
 <script>
-// ==========================================
-// 🚀 Imports
-// ==========================================
-import { api } from '../lib/api';
+  // ════════════════════════════════════════════
+  //  stripe-checkout.astro
+  //  1. Affiche le résumé commande (SSR pré-chargé)
+  //  2. Crée la session Stripe via fetch
+  //  3. Redirige vers Stripe
+  // ════════════════════════════════════════════
 
-// ==========================================
-// Configuration & Variables
-// ==========================================
-const urlParams = new URLSearchParams(window.location.search);
-const orderId = urlParams.get('order');
-
-let currentOrder = null;
-
-// ==========================================
-// Utilitaires
-// ==========================================
-function formatPrice(price) {
-  return new Intl.NumberFormat('fr-BE', {
-    style: 'currency',
-    currency: 'EUR',
-  }).format(price);
-}
-
-// ==========================================
-// Chargement Config & Thème
-// ==========================================
-async function loadConfig() {
-  try {
-    console.log('🔄 Chargement config...');
-    
-    // ✅ Utilise api.ts
-    const config = await api.config.get();
-    
-    if (config.theme?.daisy) {
-      document.documentElement.setAttribute('data-theme', config.theme.daisy);
-    }
-    
-    if (config.theme?.logo) {
-      // ✅ Utilise api.images.getUrl()
-      const logoUrl = api.images.getUrl(config.theme.logo);
-      const favicon = document.getElementById('favicon');
-      if (favicon) favicon.href = logoUrl;
-    }
-    
-    console.log('✅ Config chargée');
-    
-  } catch (error) {
-    console.error('❌ Erreur config:', error);
-    document.documentElement.setAttribute('data-theme', 'autumn');
+  interface OrderItem {
+    nom: string; prix: number; quantite: number;
+    supplements?: { name: string }[];
   }
-}
-
-// ==========================================
-// Chargement Commande
-// ==========================================
-async function loadOrder(orderId) {
-  try {
-    console.log('📦 Chargement commande:', orderId);
-    
-    // ✅ Utilise api.commandes.getPublic()
-    const order = await api.commandes.getPublic(orderId);
-    
-    console.log('✅ Commande chargée:', order);
-    
-    currentOrder = order;
-    displayOrderSummary(order);
-    
-    return order;
-    
-  } catch (error) {
-    console.error('❌ Erreur chargement commande:', error);
-    // On continue même si on ne peut pas charger les détails
-    return null;
+  interface Order {
+    id: string; numero: string;
+    articles: OrderItem[];
+    sous_total: number; frais_livraison: number; prix_total: number;
   }
-}
 
-// ==========================================
-// Affichage Résumé
-// ==========================================
-function displayOrderSummary(order) {
-  const summarySection = document.getElementById('summary-section');
-  const orderSummary = document.getElementById('order-summary');
-  const totalAmount = document.getElementById('total-amount');
-  
-  if (!orderSummary || !totalAmount) return;
-  
-  // Articles
-  let summaryHTML = '';
-  for (const article of order.articles) {
-    const articleTotal = article.prix * article.quantite;
-    summaryHTML += `
-      <div class="flex justify-between text-sm">
-        <div class="flex-1">
-          <span class="font-medium">${article.quantite}x ${article.nom}</span>
-          ${article.supplements && article.supplements.length > 0 ? `
-            <div class="text-xs text-base-content/60 ml-4">
-              + ${article.supplements.map(s => s.name).join(', ')}
-            </div>
-          ` : ''}
-        </div>
-        <span class="font-semibold">${formatPrice(articleTotal)}</span>
-      </div>
-    `;
-  }
-  
-  // Sous-total
-  summaryHTML += `
-    <div class="divider my-2"></div>
-    <div class="flex justify-between text-sm">
-      <span class="text-base-content/70">Sous-total</span>
-      <span>${formatPrice(order.sous_total)}</span>
-    </div>
-  `;
-  
-  // Frais de livraison
-  if (order.frais_livraison && order.frais_livraison > 0) {
-    summaryHTML += `
-      <div class="flex justify-between text-sm text-base-content/70">
-        <span>Frais de livraison</span>
-        <span>${formatPrice(order.frais_livraison)}</span>
-      </div>
-    `;
-  }
-  
-  orderSummary.innerHTML = summaryHTML;
-  totalAmount.textContent = formatPrice(order.prix_total);
-  
-  summarySection.style.display = 'block';
-}
+  const fmt = (n: number) =>
+    new Intl.NumberFormat('fr-BE', { style: 'currency', currency: 'EUR' }).format(n);
 
-// ==========================================
-// Création Session Stripe
-// ==========================================
-async function createCheckoutSession() {
-  try {
-    console.log('🔄 Création session Stripe pour commande:', orderId);
-    
-    // Charger les détails de la commande d'abord
-    await loadOrder(orderId);
-    
-    // Petit délai pour que l'utilisateur voie le récap
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    // Créer la session Stripe
-    console.log('💳 Appel API Stripe...');
-    
-    // ✅ Utilise api.stripe.createCheckoutSession()
-    const sessionData = await api.stripe.createCheckoutSession(orderId);
-    
-    console.log('✅ Session Stripe créée:', sessionData);
-    
-    // Rediriger vers Stripe Checkout
-    if (sessionData.url) {
-      console.log('🔄 Redirection vers Stripe...');
-      
-      // Mettre à jour le message de chargement
-      const loadingTitle = document.querySelector('#loading-section h2');
-      if (loadingTitle) {
-        loadingTitle.textContent = 'Redirection vers le paiement...';
+  function esc(v: unknown): string {
+    const d = document.createElement('div');
+    d.textContent = String(v ?? '');
+    return d.innerHTML;
+  }
+
+  function getApiBase(): string {
+    return document.querySelector<HTMLMetaElement>('meta[name="api-url"]')?.content
+      ?? 'http://127.0.0.1:5000/api';
+  }
+
+  function getOrderId(): string {
+    return document.querySelector<HTMLMetaElement>('meta[name="order-id"]')?.content
+      ?? new URLSearchParams(window.location.search).get('order')
+      ?? '';
+  }
+
+  // ── États UI ──────────────────────────────────
+  function showLoading(msg?: string) {
+    document.getElementById('loading-section')!.classList.remove('hidden');
+    document.getElementById('error-section')!.classList.add('hidden');
+    if (msg) document.getElementById('loading-title')!.textContent = msg;
+  }
+
+  function showError(msg: string) {
+    document.getElementById('loading-section')!.classList.add('hidden');
+    document.getElementById('error-section')!.classList.remove('hidden');
+    document.getElementById('error-message')!.textContent = msg;
+  }
+
+  // ── Résumé commande ────────────────────────────
+  function renderSummary(order: Order) {
+    const itemsEl = document.getElementById('order-items')!;
+    itemsEl.innerHTML = '';
+
+    order.articles.forEach(item => {
+      const row = document.createElement('div');
+      row.className = 'flex justify-between gap-2 text-sm';
+
+      const left = document.createElement('div');
+      left.className = 'flex-1 min-w-0';
+      left.innerHTML = `<span class="font-medium">${item.quantite}× ${esc(item.nom)}</span>`;
+
+      if (item.supplements?.length) {
+        const sup = document.createElement('p');
+        sup.className = 'text-xs text-base-content/50 mt-0.5';
+        sup.textContent = `+ ${item.supplements.map(s => s.name).join(', ')}`;
+        left.appendChild(sup);
       }
-      
-      // Rediriger
-      window.location.href = sessionData.url;
-    } else {
-      throw new Error('URL de paiement manquante dans la réponse');
+
+      const right = document.createElement('span');
+      right.className = 'font-semibold tabular-nums shrink-0';
+      right.textContent = fmt(item.prix * item.quantite);
+
+      row.appendChild(left);
+      row.appendChild(right);
+      itemsEl.appendChild(row);
+    });
+
+    if (order.frais_livraison > 0) {
+      const row = document.createElement('div');
+      row.className = 'flex justify-between text-sm text-base-content/60';
+      row.innerHTML = `<span>Livraison</span><span class="tabular-nums">${fmt(order.frais_livraison)}</span>`;
+      itemsEl.appendChild(row);
     }
-    
-  } catch (error) {
-    console.error('❌ Erreur:', error);
-    showError(error.message || 'Erreur lors de la création de la session de paiement');
+
+    document.getElementById('order-total')!.textContent = fmt(order.prix_total);
+    document.getElementById('summary-section')!.classList.remove('hidden');
   }
-}
 
-// ==========================================
-// Gestion Erreurs
-// ==========================================
-function showError(message) {
-  document.getElementById('loading-section').style.display = 'none';
-  document.getElementById('summary-section').style.display = 'none';
-  document.getElementById('error-section').style.display = 'block';
-  document.getElementById('error-message').textContent = message;
-}
+  // ── Création session Stripe ───────────────────
+  let isRedirecting = false;
 
-// ==========================================
-// Event Listeners
-// ==========================================
+  async function startCheckout() {
+    const orderId = getOrderId();
+    if (!orderId) { showError('Aucune commande spécifiée.'); return; }
 
-// Bouton réessayer
-document.getElementById('retry-btn')?.addEventListener('click', () => {
-  document.getElementById('error-section').style.display = 'none';
-  document.getElementById('summary-section').style.display = 'none';
-  document.getElementById('loading-section').style.display = 'flex';
-  createCheckoutSession();
-});
+    showLoading('Préparation du paiement…');
 
-// ==========================================
-// Initialisation
-// ==========================================
-console.log('💳 Page Stripe Checkout chargée');
+    try {
+      // 1. Afficher le résumé si pas encore chargé SSR
+      const preloadEl = document.getElementById('initial-order');
+      let order: Order | null = null;
+      try {
+        const raw = preloadEl?.textContent?.trim();
+        if (raw && raw !== 'null') order = JSON.parse(raw) as Order;
+      } catch { /* fetch fallback */ }
 
-loadConfig();
+      if (!order) {
+        try {
+          const res = await fetch(`${getApiBase()}/commandes/public/${encodeURIComponent(orderId)}`);
+          if (res.ok) order = await res.json() as Order;
+        } catch { /* résumé non critique */ }
+      }
 
-// Lancer la création de la session au chargement
-if (orderId) {
-  console.log('🚀 Initialisation Stripe Checkout pour:', orderId);
-  createCheckoutSession();
-} else {
-  showError('Aucune commande spécifiée');
-}
+      if (order) renderSummary(order);
 
-// Empêcher le retour arrière accidentel
-let isRedirecting = false;
-window.addEventListener('beforeunload', (e) => {
-  if (!isRedirecting && document.getElementById('loading-section').style.display !== 'none') {
-    e.preventDefault();
-    e.returnValue = '';
-    return 'Êtes-vous sûr de vouloir quitter ? Votre session de paiement sera perdue.';
+      // 2. Créer la session Stripe
+      const res = await fetch(`${getApiBase()}/stripe/create-checkout-session`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order_id: orderId }),
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error((body as any).error ?? `Erreur ${res.status}`);
+      }
+
+      const session = await res.json() as { url?: string; session_id?: string };
+
+      if (!session.url) throw new Error('URL de paiement manquante dans la réponse Stripe.');
+
+      // 3. Rediriger
+      isRedirecting = true;
+      showLoading('Redirection vers le paiement…');
+      window.location.href = session.url;
+
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Erreur inconnue';
+      showError(msg);
+    }
   }
-});
+
+  // ── Bouton réessayer ──────────────────────────
+  document.getElementById('retry-btn')?.addEventListener('click', () => {
+    void startCheckout();
+  });
+
+  // ── Avertissement si navigation pendant le paiement ─
+  window.addEventListener('beforeunload', (e) => {
+    const loading = document.getElementById('loading-section');
+    if (!isRedirecting && !loading?.classList.contains('hidden')) {
+      e.preventDefault();
+      // Modern browsers ignorer le message custom mais affichent une dialog native
+      e.returnValue = '';
+    }
+  });
+
+  // ── Init ──────────────────────────────────────
+  document.addEventListener('astro:page-load', () => void startCheckout());
+  void startCheckout();
 </script>

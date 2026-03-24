@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json.schemastore.org/web-manifest-combined.json",
+  "name": "CMDOLA POS",
+  "short_name": "POS",
+  "description": "Terminal point de vente CMDOLA",
+  "theme_color": "#1e293b",
+  "background_color": "#0f172a",
+  "display": "standalone",
+  "orientation": "any",
+  "start_url": "/pos",
+  "scope": "/",
+  "lang": "fr",
+  "categories": ["food", "business", "productivity"],
+  "icons": [
+    {
+      "src": "/pwa-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/pwa-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/pwa-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/pwa-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Terminal Caisse"
+    }
+  ]
+}

@@ -1,108 +1,166 @@
 ---
 // src/pages/status.astro
-// ============================================
-// 📍 CMDOLA - Suivi de commande (CORRIGÉ)
-// ============================================
+export const prerender = false;
 
 import Navbar from '../components/Navbar.astro';
+import api from '../lib/api';
 import '../assets/app.css';
 
-// Pas de prerender car contenu dynamique
-export const prerender = false;
+// ─────────────────────────────────────────
+// Thème SSR
+// ─────────────────────────────────────────
+const VALID_THEMES: readonly string[] = [
+  'light','dark','cupcake','bumblebee','emerald','corporate',
+  'synthwave','retro','cyberpunk','valentine','halloween','garden',
+  'forest','aqua','lofi','pastel','fantasy','wireframe','black',
+  'luxury','dracula','cmyk','autumn','business','acid','lemonade',
+  'night','coffee','winter','dim','nord','sunset',
+];
+const cookieTheme = Astro.cookies.get('theme')?.value;
+
+let theme          = 'light';
+let logoUrl        = '/favicon.ico';
+let restaurantName = 'CMDOLA';
+
+try {
+  const configData = await api.config.get() as Record<string, any>;
+  const configTheme = (configData.theme as Record<string,string>|undefined)?.daisy;
+  theme = (cookieTheme && VALID_THEMES.includes(cookieTheme))
+    ? cookieTheme
+    : (configTheme && VALID_THEMES.includes(configTheme) ? configTheme : 'light');
+  const logoFile = (configData.theme as Record<string,string>|undefined)?.logo;
+  logoUrl        = logoFile ? api.images.getUrl(logoFile) : '/favicon.ico';
+  restaurantName = (configData.nom as string|undefined) ?? 'CMDOLA';
+} catch { /* thème par défaut */ }
+
+const apiBaseUrl: string = import.meta.env.PUBLIC_API_URL ?? 'http://127.0.0.1:5000/api';
+
+// Pré-charger la commande si numéro dans l'URL (SSR)
+const urlNumero = Astro.url.searchParams.get('numero') || Astro.url.searchParams.get('order');
+let initialOrder: Record<string, any> | null = null;
+
+if (urlNumero) {
+  try {
+    initialOrder = await api.commandes.track(urlNumero) as Record<string, any>;
+  } catch { /* sera géré côté client */ }
+}
+
+const initialOrderJson = initialOrder ? JSON.stringify(initialOrder) : 'null';
 ---
 
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="fr" data-theme={theme}>
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
-  <title>Suivi de commande - CMDOLA</title>
-  <link rel="icon" type="image/png" href="/favicon.ico" id="favicon">
+  <meta name="api-url" content={apiBaseUrl} />
+  <title>Suivi commande — {restaurantName}</title>
+  <link rel="icon" type="image/png" href={logoUrl} />
+
+  <script is:inline>
+    (function(){
+      var v=['light','dark','cupcake','bumblebee','emerald','corporate',
+        'synthwave','retro','cyberpunk','valentine','halloween','garden','forest',
+        'aqua','lofi','pastel','fantasy','wireframe','black','luxury','dracula',
+        'cmyk','autumn','business','acid','lemonade','night','coffee','winter',
+        'dim','nord','sunset'];
+      var c=document.cookie.split(';').find(function(x){return x.trim().startsWith('theme=');});
+      var t=c?decodeURIComponent(c.split('=')[1].trim()):null;
+      if(t&&v.indexOf(t)!==-1) document.documentElement.setAttribute('data-theme',t);
+    }());
+  </script>
+
+  <!-- Commande pré-chargée SSR -->
+  <script id="initial-order" type="application/json" set:html={initialOrderJson} />
 </head>
 
-<body class="bg-base-200 min-h-screen">
-  
-  <Navbar />
-  
-  <div class="container mx-auto px-4 py-8">
-    
-    <h1 class="text-3xl font-bold mb-6">Suivi de commande</h1>
+<body class="bg-base-200" style="min-height:100dvh;min-height:100vh;">
 
-    <!-- Recherche de commande -->
-    <div id="search-section" class="card bg-base-100 shadow-sm">
-      <div class="card-body">
-        <h2 class="card-title">Entrez votre numéro de commande</h2>
-        <p class="text-base-content/70 mb-4">Vous pouvez le trouver sur votre email de confirmation ou la page de confirmation</p>
-        
-        <form id="search-form" class="flex gap-2">
-          <input 
-            type="text" 
-            id="order-number-input"
-            placeholder="Ex: RAREBURGER001" 
-            class="input input-bordered flex-1"
-            required
-          />
-          <button type="submit" class="btn btn-primary">
-            <span class="btn-text">Rechercher</span>
-          </button>
-        </form>
+  <header class="sticky top-0 z-40">
+    <Navbar restaurantName={restaurantName} logoUrl={logoUrl} activePage="status" />
+  </header>
 
-        <!-- Message d'erreur -->
-        <div id="search-error" class="alert alert-error mt-4" style="display: none;">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <span id="error-message">Une erreur est survenue</span>
-        </div>
+  <main class="container mx-auto px-4 py-8 max-w-2xl">
 
-        <!-- Info -->
-        <div class="alert alert-info mt-4">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <div class="text-sm">
-            <p class="font-semibold">💡 Astuce</p>
-            <p>Le numéro de commande vous a été envoyé par email et se trouve sur votre page de confirmation</p>
+    <h1 class="text-2xl sm:text-3xl font-bold mb-6 text-base-content">Suivi de commande</h1>
+
+    <!-- Recherche -->
+    <div id="search-section" class={initialOrder ? 'hidden' : ''}>
+      <div class="card bg-base-100 shadow-sm">
+        <div class="card-body gap-4">
+          <div>
+            <h2 class="card-title text-lg">Votre numéro de commande</h2>
+            <p class="text-sm text-base-content/60 mt-1">Disponible dans votre email de confirmation</p>
+          </div>
+
+          <form id="search-form" class="flex gap-2">
+            <input
+              id="order-input"
+              type="text"
+              class="input input-bordered flex-1 font-mono tracking-wide"
+              placeholder="ex : RAREBURGER001"
+              autocomplete="off"
+              autocapitalize="characters"
+              spellcheck="false"
+              required
+            />
+            <button type="submit" class="btn btn-primary" id="search-btn">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+              </svg>
+              <span id="search-btn-text">Rechercher</span>
+            </button>
+          </form>
+
+          <div id="search-error" class="alert alert-error text-sm hidden" role="alert">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <span id="error-msg"></span>
+          </div>
+
+          <div class="alert alert-info text-sm rounded-xl py-3">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <p>Le numéro de commande se trouve dans votre email de confirmation et sur la page de confirmation.</p>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Affichage du statut -->
-    <div id="status-section" style="display: none;">
-      
-      <!-- Info commande -->
-      <div class="card bg-base-100 shadow-sm mb-6">
-        <div class="card-body">
-          <div class="flex items-center justify-between flex-wrap gap-4">
+    <!-- Résultat suivi -->
+    <div id="status-section" class={initialOrder ? '' : 'hidden'}>
+
+      <!-- En-tête commande -->
+      <div class="card bg-base-100 shadow-sm mb-4">
+        <div class="card-body py-4">
+          <div class="flex items-start justify-between gap-3 flex-wrap">
             <div>
-              <h2 class="text-2xl font-bold" id="order-numero">Chargement...</h2>
-              <p class="text-base-content/60" id="order-date"></p>
+              <h2 class="text-xl font-bold font-mono tracking-wide text-base-content" id="order-numero">—</h2>
+              <p class="text-sm text-base-content/50 mt-0.5" id="order-date"></p>
             </div>
-            <button id="change-order-btn" class="btn btn-ghost btn-sm">
-              Voir une autre commande
-            </button>
+            <div class="flex items-center gap-2">
+              <span class="badge badge-sm" id="refresh-badge">
+                <span class="loading loading-ring loading-xs mr-1"></span>
+                Auto-refresh
+              </span>
+              <button id="btn-other-order" class="btn btn-ghost btn-xs">Autre commande</button>
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- Timeline des statuts -->
-      <div class="card bg-base-100 shadow-sm mb-6">
+      <!-- Timeline statut -->
+      <div class="card bg-base-100 shadow-sm mb-4">
         <div class="card-body">
-          <h3 class="card-title mb-6">État de votre commande</h3>
-          
-          <ul class="timeline timeline-vertical" id="status-timeline">
+          <h3 class="font-bold text-base mb-5">État de votre commande</h3>
+          <div id="status-timeline" class="relative">
+            <!-- Rempli par JS -->
             <div class="flex justify-center py-8">
-              <span class="loading loading-spinner loading-lg"></span>
+              <span class="loading loading-spinner loading-lg text-primary"></span>
             </div>
-          </ul>
-          
-          <div class="alert alert-info mt-6">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span class="text-sm">Cette page se met à jour automatiquement toutes les 30 secondes</span>
           </div>
         </div>
       </div>
@@ -110,12 +168,10 @@ export const prerender = false;
       <!-- Détails commande -->
       <div class="card bg-base-100 shadow-sm">
         <div class="card-body">
-          <h3 class="card-title">Détails de la commande</h3>
-          <div class="divider my-2"></div>
-          
-          <div id="order-details" class="space-y-2">
+          <h3 class="font-bold text-base mb-3">Détails</h3>
+          <div id="order-details" class="space-y-3">
             <div class="flex justify-center py-4">
-              <span class="loading loading-spinner loading-md"></span>
+              <span class="loading loading-spinner loading-md text-primary"></span>
             </div>
           </div>
         </div>
@@ -123,420 +179,426 @@ export const prerender = false;
 
     </div>
 
-  </div>
+  </main>
 
 </body>
 </html>
 
-<style>
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
+<style is:global>
+  /* ─── Timeline ───────────────────────────────── */
+  .status-steps { display: flex; flex-direction: column; }
+
+  .status-step {
+    display: flex;
+    gap: 1rem;
+    position: relative;
+    min-height: 3.5rem;
   }
 
-  @keyframes bounce {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-5px); }
+  /* Ligne verticale connectant les étapes */
+  .status-step:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    left: 1.0625rem;   /* (2.125rem circle / 2) - (2px line / 2) */
+    top: 2.5rem;
+    bottom: -0.5rem;
+    width: 2px;
+    background: oklch(var(--b3));
+    transition: background 0.4s;
+  }
+  .status-step.done:not(:last-child)::after    { background: oklch(var(--su)); }
+  .status-step.current:not(:last-child)::after {
+    background: linear-gradient(to bottom, oklch(var(--p)), oklch(var(--b3)));
   }
 
-  .status-active {
-    animation: pulse 2s ease-in-out infinite;
+  /* Cercle icône */
+  .step-circle {
+    width: 2.125rem;
+    height: 2.125rem;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+    flex-shrink: 0;
+    border: 2px solid oklch(var(--b3));
+    background: oklch(var(--b1));
+    transition: border-color 0.3s, background 0.3s, box-shadow 0.3s;
+    position: relative;
+    z-index: 1;
+    margin-top: 0.125rem;
+  }
+  .status-step.done    .step-circle {
+    border-color: oklch(var(--su));
+    background: oklch(var(--su) / 0.12);
+  }
+  .status-step.current .step-circle {
+    border-color: oklch(var(--p));
+    background: oklch(var(--p) / 0.08);
+    animation: ring-pulse 2s ease-in-out infinite;
+  }
+  .status-step.upcoming .step-circle { opacity: 0.3; }
+
+  @keyframes ring-pulse {
+    0%,100% { box-shadow: 0 0 0 0   oklch(var(--p) / 0.35); }
+    50%     { box-shadow: 0 0 0 7px oklch(var(--p) / 0); }
   }
 
-  .status-icon {
-    transition: transform 0.3s ease;
+  /* Corps texte */
+  .step-body {
+    flex: 1;
+    padding: 0.125rem 0 1.75rem;
+  }
+  .step-label {
+    font-weight: 600;
+    font-size: 0.9rem;
+    line-height: 1.3;
+    color: oklch(var(--bc));
+  }
+  .status-step.done    .step-label { color: oklch(var(--su)); }
+  .status-step.current .step-label { color: oklch(var(--p)); }
+  .status-step.upcoming .step-label { opacity: 0.35; }
+
+  .step-desc {
+    font-size: 0.78rem;
+    margin-top: 0.15rem;
+    color: oklch(var(--bc) / 0.5);
+  }
+  .status-step.current  .step-desc { color: oklch(var(--bc) / 0.65); }
+  .status-step.upcoming .step-desc { opacity: 0.3; }
+
+  /* ─── Cancelled box ──────────────────────────── */
+  .cancelled-box {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1rem 1.25rem;
+    background: oklch(var(--er) / 0.08);
+    border: 1px solid oklch(var(--er) / 0.2);
+    border-radius: 1rem;
+  }
+  .cancelled-box .cb-icon { font-size: 1.75rem; }
+  .cancelled-box .cb-title {
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: oklch(var(--er));
+  }
+  .cancelled-box .cb-desc {
+    font-size: 0.8rem;
+    color: oklch(var(--bc) / 0.55);
+    margin-top: 0.1rem;
   }
 
-  .status-completed .status-icon {
-    animation: bounce 0.6s ease;
+  /* ─── Détails rows ───────────────────────────── */
+  .detail-rows { width: 100%; }
+  .detail-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.75rem;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid oklch(var(--b2));
+  }
+  .detail-row:last-child { border-bottom: none; }
+  .detail-key {
+    font-size: 0.85rem;
+    color: oklch(var(--bc) / 0.55);
+    white-space: nowrap;
+  }
+  .detail-val {
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-align: right;
   }
 
-  .timeline li {
-    transition: all 0.3s ease;
+  /* ─── Section header dans détails ───────────── */
+  .detail-section-title {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    font-weight: 600;
+    color: oklch(var(--bc) / 0.4);
+    margin: 1rem 0 0.4rem;
   }
+  .detail-addr-line1 { font-weight: 600; font-size: 0.875rem; }
+  .detail-addr-line2 { font-size: 0.8rem; color: oklch(var(--bc) / 0.6); }
+
+  .detail-article {
+    display: flex;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+    padding: 0.2rem 0;
+  }
+  .detail-article-qty { font-weight: 700; min-width: 1.5rem; }
+
+  /* ─── Touch targets ──────────────────────────── */
+  @media (pointer: coarse) { button, a { min-height: 44px; } }
 </style>
 
 <script>
-// ==========================================
-// 🚀 Imports
-// ==========================================
-import { api } from '../lib/api';
+  // ════════════════════════════════════════════
+  //  status.astro — suivi commande
+  //  Config lue SSR, commande trackée via fetch
+  // ════════════════════════════════════════════
 
-// ==========================================
-// Variables Globales
-// ==========================================
-const urlParams = new URLSearchParams(window.location.search);
-let currentIdentifier = urlParams.get('numero') || urlParams.get('order');
-let pollingInterval = null;
-
-const statusConfig = {
-  'nouvelle': {
-    label: 'Commande reçue',
-    icon: '📝',
-    color: 'primary',
-    description: 'Votre commande a été enregistrée'
-  },
-  'en_preparation': {
-    label: 'En préparation',
-    icon: '👨‍🍳',
-    color: 'warning',
-    description: 'Votre commande est en cours de préparation'
-  },
-  'prete': {
-    label: 'Prête',
-    icon: '✅',
-    color: 'success',
-    description: 'Votre commande est prête'
-  },
-  'en_livraison': {
-    label: 'En livraison',
-    icon: '🚗',
-    color: 'info',
-    description: 'Votre commande est en route'
-  },
-  'livree': {
-    label: 'Livrée',
-    icon: '🎉',
-    color: 'success',
-    description: 'Votre commande a été livrée'
-  },
-  'terminee': {
-    label: 'Terminée',
-    icon: '✅',
-    color: 'success',
-    description: 'Votre commande est terminée'
-  },
-  'annulee': {
-    label: 'Annulée',
-    icon: '❌',
-    color: 'error',
-    description: 'Votre commande a été annulée'
+  interface OrderItem { nom: string; quantite: number; }
+  interface OrderClient {
+    nom?: string; prenom?: string;
+    adresse?: { rue: string; numero: string; code_postal: string; ville: string; };
   }
-};
-
-const statusOrder = ['nouvelle', 'en_preparation', 'prete', 'en_livraison', 'livree', 'terminee'];
-
-// ==========================================
-// Utilitaires
-// ==========================================
-function formatDate(isoDate) {
-  try {
-    const date = new Date(isoDate);
-    return new Intl.DateTimeFormat('fr-BE', {
-      day: 'numeric',
-      month: 'long',
-      hour: '2-digit',
-      minute: '2-digit',
-    }).format(date);
-  } catch {
-    return isoDate;
-  }
-}
-
-function formatPrice(price) {
-  return new Intl.NumberFormat('fr-BE', {
-    style: 'currency',
-    currency: 'EUR',
-  }).format(price);
-}
-
-function showError(message) {
-  const errorDiv = document.getElementById('search-error');
-  const errorMessage = document.getElementById('error-message');
-  errorMessage.textContent = message;
-  errorDiv.style.display = 'flex';
-  
-  setTimeout(() => {
-    errorDiv.style.display = 'none';
-  }, 5000);
-}
-
-// ==========================================
-// Chargement Config & Thème
-// ==========================================
-async function loadConfig() {
-  try {
-    console.log('🔄 Chargement config...');
-    
-    // ✅ Utilise api.ts
-    const config = await api.config.get();
-    
-    if (config.theme?.daisy) {
-      document.documentElement.setAttribute('data-theme', config.theme.daisy);
-    }
-    
-    if (config.theme?.logo) {
-      // ✅ Utilise api.images.getUrl()
-      const logoUrl = api.images.getUrl(config.theme.logo);
-      const favicon = document.getElementById('favicon');
-      if (favicon) favicon.href = logoUrl;
-    }
-    
-    console.log('✅ Config chargée');
-    
-  } catch (error) {
-    console.error('❌ Erreur config:', error);
-    document.documentElement.setAttribute('data-theme', 'autumn');
-  }
-}
-
-// ==========================================
-// Chargement Commande
-// ==========================================
-async function loadOrder(identifier) {
-  try {
-    console.log('🔍 Chargement commande:', identifier);
-    
-    // ✅ Utilise api.commandes.track() (endpoint public)
-    const order = await api.commandes.track(identifier);
-    
-    console.log('✅ Commande chargée:', order);
-    
-    displayOrder(order);
-    return true;
-    
-  } catch (error) {
-    console.error('❌ Erreur:', error);
-    
-    // Message d'erreur adapté
-    let errorMessage = error.message;
-    if (errorMessage.includes('404') || errorMessage.includes('introuvable')) {
-      errorMessage = 'Commande introuvable. Vérifiez le numéro et réessayez.';
-    } else {
-      errorMessage = 'Erreur lors du chargement de la commande';
-    }
-    
-    showError(errorMessage);
-    
-    document.getElementById('search-section').style.display = 'block';
-    document.getElementById('status-section').style.display = 'none';
-    return false;
-  }
-}
-
-// ==========================================
-// Affichage
-// ==========================================
-function displayOrder(order) {
-  document.getElementById('order-numero').textContent = `Commande #${order.numero}`;
-  document.getElementById('order-date').textContent = formatDate(order.date_creation);
-  
-  renderTimeline(order.statut, order.type);
-  
-  const detailsContainer = document.getElementById('order-details');
-  const deliveryType = order.type === 'livraison' ? 'Livraison' : 
-                      order.type === 'emporter' ? 'À emporter' : 'Sur place';
-  
-  let detailsHTML = `
-    <div class="flex justify-between">
-      <span class="text-base-content/70">Type</span>
-      <span class="font-semibold capitalize">${deliveryType}</span>
-    </div>
-    <div class="flex justify-between">
-      <span class="text-base-content/70">Client</span>
-      <span class="font-semibold">${order.client.prenom} ${order.client.nom}</span>
-    </div>
-    <div class="flex justify-between">
-      <span class="text-base-content/70">Articles</span>
-      <span class="font-semibold">${order.articles.reduce((sum, item) => sum + item.quantite, 0)}</span>
-    </div>
-    <div class="flex justify-between">
-      <span class="text-base-content/70">Total</span>
-      <span class="font-semibold">${formatPrice(order.prix_total)}</span>
-    </div>
-  `;
-
-  if (order.temps_estime) {
-    detailsHTML += `
-      <div class="flex justify-between">
-        <span class="text-base-content/70">Temps estimé</span>
-        <span class="font-semibold">${order.temps_estime}</span>
-      </div>
-    `;
+  interface TrackingData {
+    id: string; numero: string; date_creation: string;
+    statut: string; type: string;
+    client: OrderClient;
+    articles: OrderItem[];
+    prix_total: number;
+    sous_total: number;
+    frais_livraison: number;
+    temps_estime?: string;
+    numero_table?: string;
+    heure_souhaitee?: string;
+    paiement?: { mode: string; statut: string; };
   }
 
-  if (order.type === 'livraison' && order.client?.adresse) {
-    const addr = order.client.adresse;
-    detailsHTML += `
-      <div class="divider my-2"></div>
-      <div>
-        <p class="text-sm text-base-content/60 mb-1">Adresse de livraison</p>
-        <p class="font-semibold">${addr.rue} ${addr.numero}</p>
-        <p class="text-sm">${addr.code_postal} ${addr.ville}</p>
-      </div>
-    `;
+  // ── Config statuts ────────────────────────────
+  const STATUS_CFG: Record<string, { label: string; icon: string; desc: string }> = {
+    nouvelle:       { label: 'Commande reçue',    icon: '📋', desc: 'Votre commande a été enregistrée' },
+    en_preparation: { label: 'En préparation',    icon: '👨‍🍳', desc: 'Notre équipe prépare votre commande' },
+    prete:          { label: 'Prête',             icon: '✅', desc: 'Votre commande est prête' },
+    en_livraison:   { label: 'En livraison',      icon: '🛵', desc: 'Le livreur est en route' },
+    livree:         { label: 'Livrée',            icon: '🎉', desc: 'Bonne dégustation !' },
+    terminee:       { label: 'Terminée',          icon: '✅', desc: 'Merci pour votre commande !' },
+    annulee:        { label: 'Annulée',           icon: '❌', desc: 'Cette commande a été annulée' },
+  };
+
+  const STEPS_DELIVERY = ['nouvelle','en_preparation','prete','en_livraison','livree'];
+  const STEPS_OTHER    = ['nouvelle','en_preparation','prete','terminee'];
+
+  // ── État ──────────────────────────────────────
+  let currentId: string | null = null;
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+  // ── Helpers ───────────────────────────────────
+  function getApiBase(): string {
+    return document.querySelector<HTMLMetaElement>('meta[name="api-url"]')?.content
+      ?? 'http://127.0.0.1:5000/api';
   }
 
-  if (order.numero_table) {
-    detailsHTML += `
-      <div class="flex justify-between">
-        <span class="text-base-content/70">Table</span>
-        <span class="font-semibold">N°${order.numero_table}</span>
-      </div>
-    `;
+  function esc(v: unknown): string {
+    const d = document.createElement('div');
+    d.textContent = String(v ?? '');
+    return d.innerHTML;
   }
 
-  if (order.heure_souhaitee) {
-    detailsHTML += `
-      <div class="flex justify-between">
-        <span class="text-base-content/70">Heure souhaitée</span>
-        <span class="font-semibold">${order.heure_souhaitee}</span>
-      </div>
-    `;
+  function fmt(n: number) {
+    return new Intl.NumberFormat('fr-BE', { style: 'currency', currency: 'EUR' }).format(n);
   }
 
-  // Afficher les articles
-  if (order.articles && order.articles.length > 0) {
-    detailsHTML += `
-      <div class="divider my-2"></div>
-      <div>
-        <p class="text-sm text-base-content/60 mb-2">Contenu de la commande</p>
-        <div class="space-y-1">
-          ${order.articles.map(item => `
-            <div class="text-sm">
-              <span class="font-semibold">${item.quantite}x</span> ${item.nom}
-            </div>
-          `).join('')}
-        </div>
-      </div>
-    `;
+  function fmtDate(iso: string): string {
+    try {
+      return new Intl.DateTimeFormat('fr-BE', {
+        day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit',
+      }).format(new Date(iso));
+    } catch { return iso; }
   }
 
-  detailsContainer.innerHTML = detailsHTML;
-}
-
-function renderTimeline(currentStatus, orderType) {
-  const timeline = document.getElementById('status-timeline');
-  
-  let steps = [...statusOrder];
-  
-  // Adapter les étapes selon le type de commande
-  if (orderType === 'livraison') {
-    // Remplacer 'terminee' par 'livree'
-    steps = steps.filter(s => s !== 'terminee');
-  } else {
-    // Enlever les étapes de livraison
-    steps = steps.filter(s => s !== 'en_livraison' && s !== 'livree');
+  function showError(msg: string) {
+    const el  = document.getElementById('search-error')!;
+    const txt = document.getElementById('error-msg')!;
+    txt.textContent = msg;
+    el.classList.remove('hidden');
+    setTimeout(() => el.classList.add('hidden'), 6000);
   }
-  
-  const currentIndex = steps.indexOf(currentStatus);
-  
-  timeline.innerHTML = steps.map((status, index) => {
-    const config = statusConfig[status];
-    const isCompleted = index < currentIndex;
-    const isCurrent = index === currentIndex;
-    const isUpcoming = index > currentIndex;
-    
-    let classes = 'timeline-box';
-    if (isCompleted) classes += ' timeline-completed border-success';
-    if (isCurrent) classes += ' border-primary status-active';
-    
-    return `
-      <li class="${isCompleted ? 'status-completed' : ''}">
-        <hr class="${isCompleted ? 'bg-success' : 'bg-base-300'}" />
-        <div class="timeline-middle">
-          <div class="status-icon text-2xl ${isCurrent ? 'status-active' : ''}">
-            ${config.icon}
+
+  // ── Rendu timeline ────────────────────────────
+  function renderTimeline(order: TrackingData) {
+    const container = document.getElementById('status-timeline')!;
+    const steps = order.type === 'livraison' ? STEPS_DELIVERY : STEPS_OTHER;
+    const currentIdx = steps.indexOf(order.statut);
+    const isCancelled = order.statut === 'annulee';
+
+    if (isCancelled) {
+      container.innerHTML = `
+        <div class="cancelled-box">
+          <span class="cb-icon">❌</span>
+          <div>
+            <p class="cb-title">Commande annulée</p>
+            <p class="cb-desc">Cette commande a été annulée</p>
           </div>
         </div>
-        <div class="timeline-end mb-10">
-          <div class="${classes}">
-            <div class="font-bold ${isCurrent ? 'text-primary' : isCompleted ? 'text-success' : 'text-base-content/60'}">
-              ${config.label}
-            </div>
-            <p class="text-sm ${isUpcoming ? 'text-base-content/50' : ''}">
-              ${config.description}
-            </p>
-          </div>
-        </div>
-        <hr class="${isCompleted ? 'bg-success' : 'bg-base-300'}" />
-      </li>
-    `;
-  }).join('');
-}
-
-// ==========================================
-// Event Listeners
-// ==========================================
-const searchForm = document.getElementById('search-form');
-if (searchForm) {
-  searchForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const input = document.getElementById('order-number-input');
-    const orderNumber = input ? input.value.trim().toUpperCase() : '';
-    
-    if (!orderNumber) {
-      showError('Veuillez entrer un numéro de commande');
+      `;
       return;
     }
-    
-    const btn = e.target.querySelector('button[type="submit"]');
-    const btnText = btn.querySelector('.btn-text');
-    btnText.textContent = 'Recherche...';
-    btn.disabled = true;
-    
-    currentIdentifier = orderNumber;
-    const success = await loadOrder(orderNumber);
-    
-    if (success) {
-      document.getElementById('search-section').style.display = 'none';
-      document.getElementById('status-section').style.display = 'block';
-      startPolling();
-    }
-    
-    btnText.textContent = 'Rechercher';
-    btn.disabled = false;
-  });
-}
 
-const changeOrderBtn = document.getElementById('change-order-btn');
-if (changeOrderBtn) {
-  changeOrderBtn.addEventListener('click', () => {
-    stopPolling();
-    currentIdentifier = null;
-    document.getElementById('search-section').style.display = 'block';
-    document.getElementById('status-section').style.display = 'none';
-    const input = document.getElementById('order-number-input');
-    if (input) input.value = '';
-  });
-}
+    const html = steps.map((status, idx) => {
+      const cfg  = STATUS_CFG[status] ?? { label: status, icon: '•', desc: '' };
+      const done     = idx < currentIdx;
+      const current  = idx === currentIdx;
+      const upcoming = idx > currentIdx;
+      const stateClass = done ? 'done' : current ? 'current' : 'upcoming';
 
-// ==========================================
-// Polling Auto-Refresh
-// ==========================================
-function startPolling() {
-  stopPolling();
-  pollingInterval = setInterval(() => {
-    if (currentIdentifier) {
-      console.log('🔄 Mise à jour automatique...');
-      loadOrder(currentIdentifier);
-    }
-  }, 30000); // 30 secondes
-}
+      return `
+        <div class="status-step ${stateClass}">
+          <div class="step-line"></div>
+          <div class="step-circle" aria-hidden="true">${cfg.icon}</div>
+          <div class="step-body">
+            <p class="step-label">${esc(cfg.label)}</p>
+            <p class="step-desc">${esc(cfg.desc)}</p>
+          </div>
+        </div>
+      `;
+    }).join('');
 
-function stopPolling() {
-  if (pollingInterval) {
-    clearInterval(pollingInterval);
-    pollingInterval = null;
+    container.innerHTML = `<div class="status-steps">${html}</div>`;
   }
-}
 
-// ==========================================
-// Initialisation
-// ==========================================
-console.log('📍 Page de suivi chargée');
+  // ── Rendu détails ─────────────────────────────
+  function renderDetails(order: TrackingData) {
+    const el = document.getElementById('order-details')!;
+    el.innerHTML = '';
 
-loadConfig();
+    const typeLabel =
+      order.type === 'livraison' ? '🛵 Livraison' :
+      order.type === 'emporter'  ? '🛍️ À emporter' : '🍽️ Sur place';
 
-// Si un identifiant est dans l'URL, charger directement
-if (currentIdentifier && currentIdentifier !== 'null' && currentIdentifier !== '') {
-  console.log('🚀 Chargement auto:', currentIdentifier);
-  document.getElementById('search-section').style.display = 'none';
-  document.getElementById('status-section').style.display = 'block';
-  loadOrder(currentIdentifier);
-  startPolling();
-}
+    const rows: [string, string][] = [
+      ['Type',     typeLabel],
+      ['Client',   `${esc(order.client?.prenom ?? '')} ${esc(order.client?.nom ?? '')}`],
+      ['Articles', String(order.articles.reduce((s, i) => s + i.quantite, 0))],
+    ];
 
-// Cleanup
-window.addEventListener('beforeunload', stopPolling);
+    if (order.frais_livraison) rows.push(['Livraison', fmt(order.frais_livraison)]);
+    rows.push(['Total', fmt(order.prix_total)]);
+    if (order.temps_estime)    rows.push(['Temps estimé', esc(order.temps_estime)]);
+    if (order.numero_table)    rows.push(['Table', `N°${esc(order.numero_table)}`]);
+    if (order.heure_souhaitee) rows.push(['Heure souhaitée', esc(order.heure_souhaitee)]);
+
+    const rowsHtml = rows.map(([k, v]) => `
+      <div class="detail-row">
+        <span class="detail-key">${k}</span>
+        <span class="detail-val">${v}</span>
+      </div>
+    `).join('');
+
+    el.innerHTML += `<div class="detail-rows">${rowsHtml}</div>`;
+
+    // Adresse livraison
+    if (order.type === 'livraison' && order.client?.adresse) {
+      const a = order.client.adresse;
+      const addrEl = document.createElement('div');
+      addrEl.innerHTML = `
+        <p class="detail-section-title">Adresse de livraison</p>
+        <p class="detail-addr-line1">${esc(a.rue)} ${esc(a.numero)}</p>
+        <p class="detail-addr-line2">${esc(a.code_postal)} ${esc(a.ville)}</p>
+      `;
+      el.appendChild(addrEl);
+    }
+
+    // Articles
+    if (order.articles?.length) {
+      const artEl = document.createElement('div');
+      artEl.className = 'mt-3 pt-3 border-t border-base-200';
+      artEl.innerHTML = `<p class="detail-section-title">Contenu</p>`;
+      const list = document.createElement('ul');
+      order.articles.forEach(item => {
+        const li = document.createElement('li');
+        li.className = 'detail-article';
+        li.innerHTML = `<span class="detail-article-qty">${item.quantite}×</span><span>${esc(item.nom)}</span>`;
+        list.appendChild(li);
+      });
+      artEl.appendChild(list);
+      el.appendChild(artEl);
+    }
+  }
+
+  // ── Afficher commande ─────────────────────────
+  function displayOrder(order: TrackingData) {
+    document.getElementById('order-numero')!.textContent = `#${order.numero}`;
+    document.getElementById('order-date')!.textContent = fmtDate(order.date_creation);
+
+    renderTimeline(order);
+    renderDetails(order);
+
+    document.getElementById('search-section')!.classList.add('hidden');
+    document.getElementById('status-section')!.classList.remove('hidden');
+  }
+
+  // ── Fetch commande ────────────────────────────
+  async function fetchOrder(identifier: string): Promise<boolean> {
+    try {
+      const res = await fetch(`${getApiBase()}/commandes/track/${encodeURIComponent(identifier)}`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error((body as any).error ?? `Erreur ${res.status}`);
+      }
+      const order = await res.json() as TrackingData;
+      displayOrder(order);
+      return true;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Erreur inconnue';
+      const friendly = msg.toLowerCase().includes('introuvable') || msg.includes('404')
+        ? 'Commande introuvable. Vérifiez le numéro.'
+        : 'Impossible de charger la commande. Réessayez.';
+      showError(friendly);
+      return false;
+    }
+  }
+
+  // ── Polling ───────────────────────────────────
+  function startPolling(id: string) {
+    stopPolling();
+    pollTimer = setInterval(() => void fetchOrder(id), 30000);
+  }
+
+  function stopPolling() {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  }
+
+  // ── Init ──────────────────────────────────────
+  function init() {
+    // 1. Essayer la commande pré-chargée SSR
+    const preloaded = document.getElementById('initial-order');
+    if (preloaded?.textContent && preloaded.textContent.trim() !== 'null') {
+      try {
+        const order = JSON.parse(preloaded.textContent) as TrackingData;
+        currentId = order.numero;
+        displayOrder(order);
+        startPolling(currentId);
+      } catch { /* fallback vers recherche */ }
+    }
+
+    // 2. Formulaire de recherche
+    document.getElementById('search-form')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const input = document.getElementById('order-input') as HTMLInputElement;
+      const num   = input.value.trim().toUpperCase();
+      if (!num) { showError('Veuillez saisir un numéro de commande'); return; }
+
+      const btn     = document.getElementById('search-btn') as HTMLButtonElement;
+      const btnText = document.getElementById('search-btn-text')!;
+      btn.disabled      = true;
+      btnText.textContent = 'Recherche…';
+
+      currentId     = num;
+      const success = await fetchOrder(num);
+
+      if (success) startPolling(num);
+
+      btn.disabled      = false;
+      btnText.textContent = 'Rechercher';
+    });
+
+    // 3. Bouton "autre commande"
+    document.getElementById('btn-other-order')?.addEventListener('click', () => {
+      stopPolling();
+      currentId = null;
+      document.getElementById('status-section')!.classList.add('hidden');
+      document.getElementById('search-section')!.classList.remove('hidden');
+      (document.getElementById('order-input') as HTMLInputElement).value = '';
+    });
+  }
+
+  document.addEventListener('astro:page-load', init);
+  window.addEventListener('beforeunload', stopPolling);
+  init();
 </script>

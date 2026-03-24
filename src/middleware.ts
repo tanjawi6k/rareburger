@@ -1,157 +1,134 @@
 // src/middleware.ts
 import type { MiddlewareHandler } from 'astro';
 
+// ─────────────────────────────────────────
 // Configuration
+// ─────────────────────────────────────────
 const AUTH_COOKIE = 'admin_token';
+const IS_DEV      = import.meta.env.DEV;
 
-// Pages de login autorisées
-const LOGIN_PATHS = new Set([
-  '/login',
-  '/login/',
-]);
+const LOGIN_PATHS = new Set(['/login', '/login/']);
 
-// Routes protégées et leurs permissions requises
-const PROTECTED_ROUTES: Record<string, string[]> = {
-  '/admin/pos': ['admin', 'chef', 'caissier'],
-  '/admin': ['admin'],
-  '/cuisine': ['admin', 'chef'],
-  '/livraison': ['admin', 'livreur'],
-};
+// Trié par longueur décroissante pour que les routes plus spécifiques
+// soient évaluées en premier (/admin/pos avant /admin)
+const PROTECTED_ROUTES: Array<{ path: string; roles: string[] }> = [
+  { path: '/admin/pos',  roles: ['admin', 'chef', 'caissier'] },
+  { path: '/admin',      roles: ['admin'] },
+  { path: '/cuisine',    roles: ['admin', 'chef'] },
+  { path: '/livraison',  roles: ['admin', 'livreur'] },
+  { path: '/pos',        roles: ['admin', 'chef', 'caissier'] },
+].sort((a, b) => b.path.length - a.path.length);
 
-// ==========================================
-// Helper pour décoder JWT (sans vérification signature)
-// ==========================================
-function decodeJWT(token: string): any {
+// ─────────────────────────────────────────
+// Décodage JWT
+// Node.js n'a pas atob() natif fiable — on utilise Buffer
+// ⚠️ On ne vérifie pas la signature ici (pas de clé secrète côté middleware Astro)
+//    La vérification de signature se fait côté backend Python.
+//    Ce middleware protège uniquement la navigation — la vraie auth est l'API.
+// ─────────────────────────────────────────
+interface JWTPayload {
+  username?: string;
+  roles?: string[];
+  name?: string;
+  restaurant?: string;
+  exp?: number;
+  iat?: number;
+}
+
+function decodeJWT(token: string): JWTPayload | null {
   try {
-    const base64Url = token.split('.')[1];
-    if (!base64Url) return null;
-    
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    const jsonPayload = decodeURIComponent(
-      atob(base64)
-        .split('')
-        .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-        .join('')
-    );
-    
-    return JSON.parse(jsonPayload);
-  } catch (error) {
-    console.error('❌ Erreur décodage JWT:', error);
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+
+    // Buffer.from est disponible dans Node.js (runtime Astro SSR)
+    const json = Buffer.from(parts[1]!, 'base64url').toString('utf-8');
+    return JSON.parse(json) as JWTPayload;
+  } catch {
     return null;
   }
 }
 
-// ==========================================
-// Vérifier si l'utilisateur a accès à une route
-// ==========================================
-function hasRouteAccess(userRoles: string[], route: string): boolean {
-  // Trouver quelle route protégée correspond
-  for (const [protectedRoute, requiredRoles] of Object.entries(PROTECTED_ROUTES)) {
-    if (route === protectedRoute || route.startsWith(protectedRoute + '/')) {
-      // Vérifier si l'user a au moins un des rôles requis
-      return requiredRoles.some((role) => userRoles.includes(role));
-    }
-  }
-  
-  // Route non protégée
-  return true;
+function isTokenExpired(payload: JWTPayload): boolean {
+  if (!payload.exp) return false;
+  return Math.floor(Date.now() / 1000) >= payload.exp;
 }
 
-// ==========================================
-// Middleware Principal
-// ==========================================
+// ─────────────────────────────────────────
+// Redirection par défaut selon les rôles
+// ─────────────────────────────────────────
+function defaultRedirectForRoles(roles: string[]): string {
+  if (roles.includes('admin'))    return '/admin';
+  if (roles.includes('chef'))     return '/cuisine';
+  if (roles.includes('livreur'))  return '/livraison';
+  if (roles.includes('caissier')) return '/pos';
+  return '/login';
+}
+
+// ─────────────────────────────────────────
+// Middleware principal
+// ─────────────────────────────────────────
 export const onRequest: MiddlewareHandler = async (ctx, next) => {
   const { cookies, redirect, request } = ctx;
   const { pathname } = new URL(request.url);
 
-  // Ignorer les assets statiques
+  // Laisser passer les assets statiques
   if (/\.(png|jpe?g|gif|svg|ico|webp|avif|css|js|map|txt|xml|woff2?)$/i.test(pathname)) {
     return next();
   }
 
-  // Vérifier si c'est une route protégée
-  let isProtectedRoute = false;
-  let requiredRoles: string[] = [];
-  
-  for (const [protectedRoute, roles] of Object.entries(PROTECTED_ROUTES)) {
-    if (pathname === protectedRoute || pathname.startsWith(protectedRoute + '/')) {
-      isProtectedRoute = true;
-      requiredRoles = roles;
-      break;
-    }
-  }
-
-  // Si c'est une page de login, laisser passer
-  const isLoginPage = LOGIN_PATHS.has(pathname);
-  if (isLoginPage) {
+  // Page de login — toujours accessible
+  if (LOGIN_PATHS.has(pathname)) {
     return next();
   }
 
-  // Si route protégée, vérifier l'authentification
-  if (isProtectedRoute) {
-    const token = cookies.get(AUTH_COOKIE)?.value;
-    
-    // Pas de token = redirection vers login
-    if (!token) {
-      console.log(`❌ Pas de token pour accéder à ${pathname}`);
-      return redirect('/login', 302);
-    }
+  // Trouver la route protégée correspondante
+  const matched = PROTECTED_ROUTES.find(
+    ({ path }) => pathname === path || pathname.startsWith(path + '/')
+  );
 
-    // Décoder le token
-    const payload = decodeJWT(token);
-    
-    // Token invalide ou malformé
-    if (!payload) {
-      console.log(`❌ Token invalide pour ${pathname}`);
-      cookies.delete(AUTH_COOKIE, { path: '/' });
-      return redirect('/login', 302);
-    }
+  // Route non protégée — laisser passer
+  if (!matched) return next();
 
-    // Vérifier expiration
-    const now = Math.floor(Date.now() / 1000);
-    if (payload.exp && payload.exp < now) {
-      console.log(`❌ Token expiré pour ${pathname}`);
-      cookies.delete(AUTH_COOKIE, { path: '/' });
-      return redirect('/login', 302);
-    }
+  // ── Route protégée ────────────────────────────
+  const token = cookies.get(AUTH_COOKIE)?.value;
 
-    // Récupérer les rôles
-    const userRoles: string[] = payload.roles || [];
-    const username: string = payload.username || 'unknown';
-
-    // Vérifier les permissions
-    const hasAccess = requiredRoles.some((role) => userRoles.includes(role));
-    
-    if (!hasAccess) {
-      console.log(`❌ ${username} (${userRoles.join(', ')}) n'a pas accès à ${pathname}`);
-      console.log(`   Rôles requis: ${requiredRoles.join(', ')}`);
-      
-      // Rediriger vers la première interface accessible
-      if (userRoles.includes('admin')) {
-        return redirect('/admin', 302);
-      } else if (userRoles.includes('chef')) {
-        return redirect('/cuisine', 302);
-      } else if (userRoles.includes('livreur')) {
-        return redirect('/livraison', 302);
-      } else if (userRoles.includes('caissier')) {  // ✅ NOUVEAU
-        return redirect('/admin/pos', 302);
-      } else {
-        // Aucun rôle valide = déconnexion
-        cookies.delete(AUTH_COOKIE, { path: '/' });
-        return redirect('/login', 302);
-      }
-    }
-
-    // ✅ Accès autorisé - Injecter les infos user dans le contexte
-    ctx.locals.user = {
-      username,
-      roles: userRoles,
-      name: payload.name || username,
-      restaurant: payload.restaurant || 'unknown',
-    };
-
-    console.log(`✅ ${username} (${userRoles.join(', ')}) accède à ${pathname}`);
+  if (!token) {
+    if (IS_DEV) console.log(`[middleware] No token → ${pathname}`);
+    return redirect(`/login?redirect=${encodeURIComponent(pathname)}`, 302);
   }
+
+  const payload = decodeJWT(token);
+
+  if (!payload) {
+    if (IS_DEV) console.log(`[middleware] Invalid token → ${pathname}`);
+    cookies.delete(AUTH_COOKIE, { path: '/' });
+    return redirect('/login', 302);
+  }
+
+  if (isTokenExpired(payload)) {
+    if (IS_DEV) console.log(`[middleware] Expired token → ${pathname}`);
+    cookies.delete(AUTH_COOKIE, { path: '/' });
+    return redirect('/login?expired=1', 302);
+  }
+
+  const userRoles = payload.roles ?? [];
+  const username  = payload.username ?? 'unknown';
+  const hasAccess = matched.roles.some(r => userRoles.includes(r));
+
+  if (!hasAccess) {
+    if (IS_DEV) console.log(`[middleware] ${username} (${userRoles}) denied → ${pathname}`);
+    return redirect(defaultRedirectForRoles(userRoles), 302);
+  }
+
+  // Accès autorisé — injecter dans Astro.locals
+  ctx.locals.user = {
+    username,
+    roles: userRoles,
+    name:       payload.name       ?? username,
+    restaurant: payload.restaurant ?? 'unknown',
+  };
+
+  if (IS_DEV) console.log(`[middleware] ${username} (${userRoles}) → ${pathname}`);
 
   return next();
 };
