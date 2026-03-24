@@ -1,449 +1,337 @@
 ---
 // src/pages/login.astro
-// ============================================
-// 🔐 CMDOLA - Page de Connexion Unique
-// ============================================
-
-import "../assets/app.css";
-
 export const prerender = false;
 
-// Pas de vérification auth ici car c'est la page de login
-// Si déjà connecté, rediriger selon le rôle (géré côté client)
+import api from '../lib/api';
+import '../assets/app.css';
+
+// Thème SSR
+const VALID_THEMES: readonly string[] = [
+  'light','dark','cupcake','bumblebee','emerald','corporate',
+  'synthwave','retro','cyberpunk','valentine','halloween','garden',
+  'forest','aqua','lofi','pastel','fantasy','wireframe','black',
+  'luxury','dracula','cmyk','autumn','business','acid','lemonade',
+  'night','coffee','winter','dim','nord','sunset',
+];
+const cookieTheme = Astro.cookies.get('theme')?.value;
+
+let theme          = 'light';
+let logoUrl        = '/favicon.ico';
+let restaurantName = 'CMDOLA';
+
+try {
+  const cfg = await api.config.get() as Record<string,any>;
+  const t   = (cfg.theme as Record<string,string>|undefined)?.daisy;
+  theme = (cookieTheme && VALID_THEMES.includes(cookieTheme))
+    ? cookieTheme
+    : (t && VALID_THEMES.includes(t) ? t : 'light');
+  const logoFile = (cfg.theme as Record<string,string>|undefined)?.logo;
+  logoUrl        = logoFile ? api.images.getUrl(logoFile) : '/favicon.ico';
+  restaurantName = (cfg.nom as string|undefined) ?? 'CMDOLA';
+} catch {}
+
+// Lire les paramètres URL
+const redirectParam = Astro.url.searchParams.get('redirect') ?? '';
+const expired       = Astro.url.searchParams.get('expired') === '1';
+
+const apiBaseUrl: string = import.meta.env.PUBLIC_API_URL ?? 'http://127.0.0.1:5000/api';
 ---
 
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="fr" data-theme={theme}>
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
-  <meta name="theme-color" content="#1e293b">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <title>Connexion - CMDOLA</title>
-  <link rel="icon" type="image/png" href="/favicon.ico" id="favicon">
-  <style>
-    .role-card {
-      transition: all 0.3s ease;
-      cursor: pointer;
-    }
-    
-    .role-card:hover {
-      transform: translateY(-8px);
-      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-    }
+  <meta name="api-url" content={apiBaseUrl} />
+  <title>Connexion — {restaurantName}</title>
+  <link rel="icon" type="image/png" href={logoUrl} />
 
-    .fade-in {
-      animation: fadeIn 0.5s ease-in;
-    }
+  <script is:inline>
+    (function(){
+      var v=['light','dark','cupcake','bumblebee','emerald','corporate','synthwave','retro',
+        'cyberpunk','valentine','halloween','garden','forest','aqua','lofi','pastel','fantasy',
+        'wireframe','black','luxury','dracula','cmyk','autumn','business','acid','lemonade',
+        'night','coffee','winter','dim','nord','sunset'];
+      var c=document.cookie.split(';').find(function(x){return x.trim().startsWith('theme=');});
+      var t=c?decodeURIComponent(c.split('=')[1].trim()):null;
+      if(t&&v.indexOf(t)!==-1) document.documentElement.setAttribute('data-theme',t);
+    }());
+  </script>
 
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(20px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-  </style>
+  <!-- Redirect destination + expired passés au script sans define:vars -->
+  <meta name="login-redirect" content={redirectParam} />
+  {expired && <meta name="login-expired" content="1" />}
 </head>
 
-<body class="min-h-screen bg-gradient-to-br from-base-200 to-base-300">
-  
-  <div class="min-h-screen flex items-center justify-center p-4">
-    <div class="max-w-2xl w-full">
-      
-      <!-- Header -->
-      <div class="text-center mb-8 fade-in">
-        <div class="flex justify-center mb-6">
-          <img src="/favicon.ico" alt="Logo" class="w-24 h-24 rounded-3xl shadow-2xl" id="logoImage" />
-        </div>
-        <h1 class="text-5xl font-bold text-primary mb-3" id="restaurantName">CMDOLA</h1>
-        <p class="text-xl text-base-content/70">Espace Professionnel</p>
-      </div>
+<body class="min-h-screen bg-base-200 flex items-center justify-center p-4"
+  style="min-height:100dvh;min-height:100vh;">
 
-      <!-- Formulaire de connexion -->
-      <div id="loginSection" class="card bg-base-100 shadow-2xl fade-in">
-        <div class="card-body p-8">
-          
-          <h2 class="card-title text-3xl justify-center mb-8">Connexion</h2>
-          
-          <form id="loginForm" class="space-y-6">
-            
-            <!-- Username -->
-            <div class="form-control">
-              <label class="label">
-                <span class="label-text text-lg font-semibold">Nom d'utilisateur</span>
-              </label>
-              <input 
-                type="text" 
-                id="username"
-                name="username"
-                placeholder="Votre identifiant" 
-                class="input input-bordered input-lg text-lg" 
-                required
-                autocomplete="username"
-                autofocus
-              />
-            </div>
+  <div class="w-full max-w-md">
 
-            <!-- Password -->
-            <div class="form-control">
-              <label class="label">
-                <span class="label-text text-lg font-semibold">Mot de passe</span>
-              </label>
-              <input 
-                type="password" 
-                id="password"
-                name="password"
-                placeholder="••••••••" 
-                class="input input-bordered input-lg text-lg" 
-                required
-                autocomplete="current-password"
-              />
-            </div>
-
-            <!-- Alert erreur -->
-            <div id="errorAlert" class="alert alert-error hidden">
-              <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <span id="errorMessage">Une erreur est survenue</span>
-            </div>
-
-            <!-- Bouton connexion -->
-            <div class="form-control mt-8">
-              <button type="submit" class="btn btn-primary btn-lg text-xl h-16" id="submitBtn">
-                <span id="btnText">Se connecter</span>
-                <span id="btnLoader" class="loading loading-spinner loading-lg hidden"></span>
-              </button>
-            </div>
-
-          </form>
-
-          <div class="divider text-sm text-base-content/50 mt-8">
-            Interface réservée au personnel
-          </div>
-
-        </div>
-      </div>
-
-      <!-- Choix du rôle (si plusieurs rôles) -->
-      <div id="roleSelectionSection" class="hidden fade-in">
-        
-        <div class="card bg-base-100 shadow-2xl mb-6">
-          <div class="card-body p-8 text-center">
-            <h2 class="text-3xl font-bold mb-2">Bienvenue, <span id="userName">Utilisateur</span> ! 👋</h2>
-            <p class="text-lg text-base-content/70">Choisissez votre interface :</p>
-          </div>
-        </div>
-
-        <div class="grid gap-6" id="rolesContainer">
-          <!-- Rempli dynamiquement par JS -->
-        </div>
-
-        <div class="text-center mt-6">
-          <button id="backBtn" class="btn btn-ghost btn-lg">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-            </svg>
-            Retour
-          </button>
-        </div>
-
-      </div>
-
-      <!-- Retour au site -->
-      <div class="text-center mt-6">
-        <a href="/" class="btn btn-ghost btn-lg">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-          </svg>
-          Retour au site
-        </a>
-      </div>
-
+    <!-- Logo + titre -->
+    <div class="text-center mb-8">
+      <img src={logoUrl} alt="Logo" id="logoImg"
+        class="w-20 h-20 rounded-2xl shadow-xl object-contain mx-auto mb-4"
+        onerror="this.src='/favicon.ico'" />
+      <h1 class="text-3xl font-black text-primary">{restaurantName}</h1>
+      <p class="text-base-content/60 text-sm mt-1">Espace professionnel</p>
     </div>
-  </div>
 
+    <!-- Bannière session expirée -->
+    {expired && (
+      <div class="alert alert-warning mb-4 text-sm" role="alert">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+        </svg>
+        Votre session a expiré. Reconnectez-vous.
+      </div>
+    )}
+
+    <!-- Formulaire -->
+    <div class="card bg-base-100 shadow-xl" id="loginCard">
+      <div class="card-body gap-5">
+        <h2 class="card-title text-xl justify-center">Connexion</h2>
+
+        <div id="errorAlert" class="alert alert-error text-sm hidden" role="alert">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+          <span id="errorMsg">Identifiants incorrects</span>
+        </div>
+
+        <form id="loginForm" class="space-y-4" novalidate>
+          <div class="form-control">
+            <label class="label" for="username"><span class="label-text font-semibold">Identifiant</span></label>
+            <input id="username" type="text" name="username"
+              class="input input-bordered input-lg" placeholder="Votre identifiant"
+              required autocomplete="username" autofocus />
+          </div>
+          <div class="form-control">
+            <label class="label" for="password"><span class="label-text font-semibold">Mot de passe</span></label>
+            <input id="password" type="password" name="password"
+              class="input input-bordered input-lg" placeholder="••••••••"
+              required autocomplete="current-password" />
+          </div>
+          <button type="submit" class="btn btn-primary btn-block btn-lg mt-2" id="submitBtn">
+            <span id="btnText">Se connecter</span>
+            <span id="btnLoader" class="loading loading-spinner loading-sm hidden"></span>
+          </button>
+        </form>
+
+      </div>
+    </div>
+
+    <!-- Choix interface (si multi-rôles) -->
+    <div id="roleCard" class="card bg-base-100 shadow-xl hidden">
+      <div class="card-body gap-4">
+        <h2 class="card-title justify-center">Bonjour, <span id="userName"></span> 👋</h2>
+        <p class="text-center text-sm text-base-content/60">Choisissez votre interface</p>
+        <div id="rolesGrid" class="grid gap-3"></div>
+        <button id="backBtn" class="btn btn-ghost btn-sm mt-1">← Retour</button>
+      </div>
+    </div>
+
+    <!-- Lien retour site public -->
+    <div class="text-center mt-5">
+      <a href="/" class="btn btn-ghost btn-sm gap-1 text-base-content/60">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+        </svg>
+        Retour au site
+      </a>
+    </div>
+
+  </div>
 </body>
 </html>
 
 <script>
-// ==========================================
-// 🚀 Imports
-// ==========================================
-import { api } from '../lib/api';
+  // ── Config rôles ──────────────────────────────
+  const ROLE_CONFIG: Record<string, { icon: string; label: string; desc: string; url: string }> = {
+    admin:    { icon: '🏢', label: 'Administration', desc: 'Gestion complète',       url: '/admin'    },
+    chef:     { icon: '👨‍🍳', label: 'Cuisine',        desc: 'Préparation commandes', url: '/cuisine'  },
+    livreur:  { icon: '🚗', label: 'Livraison',       desc: 'Gestion des livraisons', url: '/livraison'},
+    caissier: { icon: '🧾', label: 'Caisse',          desc: 'Point de vente (POS)',   url: '/pos'      },
+  };
 
-// ==========================================
-// Variables Globales
-// ==========================================
-let currentUser = null;
-let currentToken = null;
-
-// Configuration des rôles
-const ROLE_CONFIG = {
-  admin: {
-    icon: '🏢',
-    label: 'Administration',
-    description: 'Gestion complète du restaurant',
-    color: 'bg-primary',
-    url: '/admin'
-  },
-  chef: {
-    icon: '👨‍🍳',
-    label: 'Cuisine',
-    description: 'Préparation des commandes',
-    color: 'bg-warning',
-    url: '/cuisine'
-  },
-  livreur: {
-    icon: '🚗',
-    label: 'Livraison',
-    description: 'Gestion des livraisons',
-    color: 'bg-info',
-    url: '/livraison'
-  },
-  caissier: {  // ✅ NOUVEAU
-    icon: '🧾',
-    label: 'Caisse',
-    description: 'Point de vente (POS)',
-    color: 'bg-success',
-    url: '/admin/pos'
+  // ── Helpers ───────────────────────────────────
+  function getApiBase() {
+    return document.querySelector<HTMLMetaElement>('meta[name="api-url"]')?.content
+      ?? 'http://127.0.0.1:5000/api';
   }
-};
 
-// ==========================================
-// Chargement Config & Thème
-// ==========================================
-async function loadConfig() {
-  try {
-    console.log('🔄 Chargement config...');
-    
-    // ✅ Utilise api.ts
-    const config = await api.config.get();
-    
-    if (config.theme?.daisy) {
-      document.documentElement.setAttribute('data-theme', config.theme.daisy);
-    }
-    
-    if (config.theme?.logo) {
-      // ✅ Utilise api.images.getUrl()
-      const logoUrl = api.images.getUrl(config.theme.logo);
-      const favicon = document.getElementById('favicon');
-      const logoImage = document.getElementById('logoImage');
-      if (favicon) favicon.href = logoUrl;
-      if (logoImage) logoImage.src = logoUrl;
-    }
-
-    if (config.nom) {
-      const nameEl = document.getElementById('restaurantName');
-      if (nameEl) nameEl.textContent = config.nom;
-    }
-    
-    console.log('✅ Config chargée');
-    
-  } catch (error) {
-    console.error('❌ Erreur config:', error);
-    // Thème par défaut en cas d'erreur
-    document.documentElement.setAttribute('data-theme', 'autumn');
+  function getRedirect(): string {
+    // Lire depuis le meta injecté SSR
+    return document.querySelector<HTMLMetaElement>('meta[name="login-redirect"]')?.content ?? '';
   }
-}
 
-// ==========================================
-// Vérifier si déjà connecté
-// ==========================================
-async function checkExistingSession() {
-  try {
-    // Vérifier si un token existe
-    const cookies = document.cookie.split(';');
-    const tokenCookie = cookies.find(c => c.trim().startsWith('admin_token='));
-    
-    if (!tokenCookie) return;
-    
-    console.log('🔍 Token existant détecté, vérification...');
-    
-    // ✅ Vérifier le token via api.ts
-    const result = await api.auth.verify();
-    
-    if (result.valid && result.roles && result.roles.length > 0) {
-      console.log('✅ Session valide, redirection...');
-      
-      // Rediriger vers la première interface accessible
-      const role = result.roles[0];
-      const config = ROLE_CONFIG[role];
-      if (config) {
-        window.location.href = config.url;
+  function esc(v: unknown): string {
+    const d = document.createElement('div');
+    d.textContent = String(v ?? '');
+    return d.innerHTML;
+  }
+
+  function q<T extends HTMLElement>(id: string) { return document.getElementById(id) as T; }
+
+  function showError(msg: string) {
+    q('errorMsg').textContent = msg;
+    q('errorAlert').classList.remove('hidden');
+    setTimeout(() => q('errorAlert').classList.add('hidden'), 5000);
+  }
+
+  // ── Redirection intelligente ───────────────────
+  // Priorité :
+  // 1. ?redirect=/chemin  — page demandée avant l'expiration
+  // 2. Rôle unique → destination par défaut du rôle
+  // 3. Multi-rôles → afficher le choix
+  function redirectForRole(roles: string[], token: string) {
+    const redirectTo = getRedirect();
+
+    // ?redirect présent — vérifier qu'au moins un rôle y a accès
+    // Admin a accès à TOUT, les autres rôles ont accès à leur URL + /pos
+    if (redirectTo) {
+      const PROTECTED: Record<string, string[]> = {
+        '/admin':    ['admin'],
+        '/cuisine':  ['admin', 'chef'],
+        '/livraison':['admin', 'livreur'],
+        '/pos':      ['admin', 'chef', 'caissier'],
+      };
+      // Trouver quelle route protégée correspond au redirect
+      const matchedRoute = Object.keys(PROTECTED)
+        .sort((a, b) => b.length - a.length)
+        .find(route => redirectTo === route || redirectTo.startsWith(route + '/') || redirectTo.startsWith(route + '?'));
+
+      const allowed = matchedRoute
+        ? roles.some(r => PROTECTED[matchedRoute].includes(r))
+        : roles.includes('admin'); // route inconnue → admin seulement
+
+      if (allowed) {
+        saveCookieAndGo(token, redirectTo);
+        return;
       }
     }
-  } catch (error) {
-    // Token invalide ou expiré, on reste sur la page de login
-    console.log('⚠️ Session invalide ou expirée');
+
+    // Pas de redirect valide → destination par défaut du premier rôle
+    // Ordre de priorité : admin > chef > caissier > livreur
+    const priority = ['admin', 'chef', 'caissier', 'livreur'];
+    const topRole  = priority.find(r => roles.includes(r)) ?? roles[0];
+    const cfg      = ROLE_CONFIG[topRole];
+    if (cfg) { saveCookieAndGo(token, cfg.url); return; }
+
+    // Fallback : sélecteur multi-rôles
+    showRoleSelection(roles, token);
   }
-}
 
-// ==========================================
-// Affichage Erreur
-// ==========================================
-function showError(message) {
-  const errorAlert = document.getElementById('errorAlert');
-  const errorMessage = document.getElementById('errorMessage');
-  
-  errorMessage.textContent = message;
-  errorAlert.classList.remove('hidden');
-  
-  setTimeout(() => {
-    errorAlert.classList.add('hidden');
-  }, 5000);
-}
-
-// ==========================================
-// Gestion Formulaire de Connexion
-// ==========================================
-const loginForm = document.getElementById('loginForm');
-const errorAlert = document.getElementById('errorAlert');
-const submitBtn = document.getElementById('submitBtn');
-const btnText = document.getElementById('btnText');
-const btnLoader = document.getElementById('btnLoader');
-
-loginForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  
-  errorAlert.classList.add('hidden');
-  submitBtn.disabled = true;
-  btnText.classList.add('hidden');
-  btnLoader.classList.remove('hidden');
-
-  const username = document.getElementById('username').value.trim();
-  const password = document.getElementById('password').value;
-
-  try {
-    console.log('🔐 Tentative de connexion...', username);
-    
-    // ✅ Utilise api.auth.login()
-    const data = await api.auth.login(username, password);
-
-    if (!data.success) {
-      throw new Error(data.message || 'Identifiants incorrects');
-    }
-
-    console.log('✅ Connexion réussie:', data);
-
-    // Sauvegarder les infos
-    currentUser = data;
-    currentToken = data.token;
-
-    // Si un seul rôle, redirection directe
-    if (data.roles.length === 1) {
-      const role = data.roles[0];
-      console.log(`→ Un seul rôle (${role}), redirection directe`);
-      await selectRole(role);
-    } 
-    // Si plusieurs rôles, afficher le choix
-    else {
-      console.log(`→ Plusieurs rôles (${data.roles.join(', ')}), affichage du choix`);
-      showRoleSelection();
-    }
-
-  } catch (error) {
-    console.error('❌ Erreur login:', error);
-    showError(error.message || 'Erreur de connexion');
-    
-    submitBtn.disabled = false;
-    btnText.classList.remove('hidden');
-    btnLoader.classList.add('hidden');
+  function saveCookieAndGo(token: string, url: string) {
+    document.cookie = `admin_token=${token}; path=/; max-age=86400; SameSite=Strict`;
+    window.location.href = url;
   }
-});
 
-// ==========================================
-// Afficher Sélection de Rôle
-// ==========================================
-function showRoleSelection() {
-  document.getElementById('loginSection').classList.add('hidden');
-  document.getElementById('roleSelectionSection').classList.remove('hidden');
+  // ── Sélection multi-rôles ─────────────────────
+  let pendingToken = '';
 
-  // Afficher le nom de l'utilisateur
-  document.getElementById('userName').textContent = currentUser.name || currentUser.username;
+  function showRoleSelection(roles: string[], token: string) {
+    pendingToken = token;
+    q('loginCard').classList.add('hidden');
+    q('roleCard').classList.remove('hidden');
 
-  // Générer les cartes de rôles
-  const rolesContainer = document.getElementById('rolesContainer');
-  rolesContainer.innerHTML = '';
+    const grid = q('rolesGrid');
+    grid.innerHTML = '';
 
-  currentUser.roles.forEach(role => {
-    const config = ROLE_CONFIG[role];
-    if (!config) return;
-
-    const card = document.createElement('div');
-    card.className = `card ${config.color} text-base-100 shadow-xl role-card`;
-    card.innerHTML = `
-      <div class="card-body p-8">
-        <div class="flex items-center gap-4 mb-4">
-          <div class="text-6xl">${config.icon}</div>
-          <div class="flex-1">
-            <h3 class="card-title text-3xl mb-2">${config.label}</h3>
-            <p class="text-lg opacity-90">${config.description}</p>
-          </div>
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-          </svg>
+    roles.forEach(role => {
+      const cfg = ROLE_CONFIG[role];
+      if (!cfg) return;
+      const btn = document.createElement('button');
+      btn.className = 'btn btn-outline btn-lg h-auto py-4 flex justify-start gap-4';
+      btn.innerHTML = `
+        <span class="text-3xl">${cfg.icon}</span>
+        <div class="text-left flex-1">
+          <p class="font-bold">${esc(cfg.label)}</p>
+          <p class="text-xs opacity-70 font-normal">${esc(cfg.desc)}</p>
         </div>
-      </div>
-    `;
-    
-    card.addEventListener('click', () => selectRole(role));
-    rolesContainer.appendChild(card);
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+        </svg>
+      `;
+      btn.addEventListener('click', () => saveCookieAndGo(pendingToken, cfg.url));
+      grid.appendChild(btn);
+    });
+  }
+
+  q('backBtn')?.addEventListener('click', () => {
+    q('roleCard').classList.add('hidden');
+    q('loginCard').classList.remove('hidden');
+    pendingToken = '';
+    const btn = q<HTMLButtonElement>('submitBtn');
+    btn.disabled = false;
+    q('btnText').classList.remove('hidden');
+    q('btnLoader').classList.add('hidden');
   });
-}
 
-// ==========================================
-// Sélectionner un Rôle
-// ==========================================
-async function selectRole(role) {
-  console.log(`✅ Rôle sélectionné: ${role}`);
+  // ── Formulaire de connexion ───────────────────
+  q('loginForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
 
-  const config = ROLE_CONFIG[role];
-  if (!config) {
-    showError('Rôle invalide');
-    return;
+    const btn     = q<HTMLButtonElement>('submitBtn');
+    const username = (q<HTMLInputElement>('username')).value.trim();
+    const password = (q<HTMLInputElement>('password')).value;
+
+    if (!username || !password) { showError('Identifiant et mot de passe requis'); return; }
+
+    btn.disabled = true;
+    q('btnText').classList.add('hidden');
+    q('btnLoader').classList.remove('hidden');
+    q('errorAlert').classList.add('hidden');
+
+    try {
+      const res = await fetch(`${getApiBase()}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+
+      const data = await res.json() as {
+        success?: boolean; token?: string; roles?: string[];
+        name?: string; username?: string; message?: string;
+      };
+
+      if (!res.ok || !data.success || !data.token) {
+        throw new Error(data.message ?? 'Identifiants incorrects');
+      }
+
+      // Afficher le nom dans le sélecteur multi-rôles
+      q('userName').textContent = data.name ?? data.username ?? username;
+
+      redirectForRole(data.roles ?? [], data.token);
+
+    } catch (err: unknown) {
+      showError(err instanceof Error ? err.message : 'Erreur de connexion');
+      btn.disabled = false;
+      q('btnText').classList.remove('hidden');
+      q('btnLoader').classList.add('hidden');
+    }
+  });
+
+  // ── Vérifier session existante ────────────────
+  // Si déjà connecté avec un token valide → rediriger directement
+  async function checkExistingSession() {
+    const tokenCookie = document.cookie.split(';').find(c => c.trim().startsWith('admin_token='));
+    if (!tokenCookie) return;
+
+    try {
+      const token = decodeURIComponent(tokenCookie.split('=')[1].trim());
+      const res   = await fetch(`${getApiBase()}/auth/verify`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      const data = await res.json() as { valid?: boolean; roles?: string[] };
+      if (data.valid && data.roles?.length) {
+        redirectForRole(data.roles, token);
+      }
+    } catch { /* session invalide, on reste sur login */ }
   }
 
-  try {
-    // Sauvegarder le token dans un cookie
-    // Le cookie sera utilisé par le middleware
-    document.cookie = `admin_token=${currentToken}; path=/; max-age=86400; SameSite=Strict`;
-    
-    console.log(`→ Redirection vers ${config.url}`);
-    
-    // Rediriger vers l'interface appropriée
-    window.location.href = config.url;
-
-  } catch (error) {
-    console.error('❌ Erreur sélection rôle:', error);
-    showError('Erreur lors de la redirection');
-  }
-}
-
-// ==========================================
-// Bouton Retour
-// ==========================================
-document.getElementById('backBtn')?.addEventListener('click', () => {
-  document.getElementById('roleSelectionSection').classList.add('hidden');
-  document.getElementById('loginSection').classList.remove('hidden');
-  
-  // Reset formulaire
-  submitBtn.disabled = false;
-  btnText.classList.remove('hidden');
-  btnLoader.classList.add('hidden');
-  
-  currentUser = null;
-  currentToken = null;
-});
-
-// ==========================================
-// Initialisation
-// ==========================================
-console.log('🔐 Page de connexion chargée');
-
-loadConfig();
-checkExistingSession();
-
-// Focus sur le champ username
-document.getElementById('username')?.focus();
+  checkExistingSession();
 </script>
