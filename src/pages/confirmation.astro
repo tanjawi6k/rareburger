@@ -1,162 +1,201 @@
 ---
 // src/pages/confirmation.astro
-// ============================================
-// ✅ CMDOLA - Page Confirmation Commande (CORRIGÉE)
-// ============================================
+export const prerender = false;
 
 import Navbar from '../components/Navbar.astro';
+import api from '../lib/api';
 import '../assets/app.css';
 
-// Pas de prerender car contenu dynamique
-export const prerender = false;
+// ── Thème SSR ─────────────────────────────────
+const VALID_THEMES: readonly string[] = [
+  'light','dark','cupcake','bumblebee','emerald','corporate',
+  'synthwave','retro','cyberpunk','valentine','halloween','garden',
+  'forest','aqua','lofi','pastel','fantasy','wireframe','black',
+  'luxury','dracula','cmyk','autumn','business','acid','lemonade',
+  'night','coffee','winter','dim','nord','sunset',
+];
+const cookieTheme = Astro.cookies.get('theme')?.value;
+
+let theme          = 'light';
+let logoUrl        = '/favicon.ico';
+let restaurantName = 'CMDOLA';
+let restaurantTel  = '';
+
+try {
+  const cfg = await api.config.get() as Record<string, any>;
+  const t   = (cfg.theme as Record<string,string>|undefined)?.daisy;
+  theme = (cookieTheme && VALID_THEMES.includes(cookieTheme))
+    ? cookieTheme
+    : (t && VALID_THEMES.includes(t) ? t : 'light');
+  const logoFile = (cfg.theme as Record<string,string>|undefined)?.logo;
+  logoUrl        = logoFile ? api.images.getUrl(logoFile) : '/favicon.ico';
+  restaurantName = (cfg.nom       as string|undefined) ?? 'CMDOLA';
+  restaurantTel  = (cfg.telephone as string|undefined) ?? '';
+} catch {}
+
+// ── Pré-charger la commande SSR si possible ───
+const orderId = Astro.url.searchParams.get('order') ?? '';
+let initialOrder: Record<string, any> | null = null;
+
+if (orderId) {
+  try {
+    initialOrder = await api.commandes.getPublic(orderId) as Record<string, any>;
+  } catch {}
+}
+
+const initialOrderJson = JSON.stringify(initialOrder);
+const apiBaseUrl: string = import.meta.env.PUBLIC_API_URL ?? 'https://api.rareburger.be/api';
 ---
 
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="fr" data-theme={theme}>
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
-  <title>Commande confirmée - CMDOLA</title>
-  <link rel="icon" type="image/png" href="/favicon.ico" id="favicon">
+  <meta name="api-url" content={apiBaseUrl} />
+  <title>Confirmation — {restaurantName}</title>
+  <link rel="icon" type="image/png" href={logoUrl} />
+
+  <script is:inline>
+    (function(){
+      var v=['light','dark','cupcake','bumblebee','emerald','corporate','synthwave','retro',
+        'cyberpunk','valentine','halloween','garden','forest','aqua','lofi','pastel','fantasy',
+        'wireframe','black','luxury','dracula','cmyk','autumn','business','acid','lemonade',
+        'night','coffee','winter','dim','nord','sunset'];
+      var c=document.cookie.split(';').find(function(x){return x.trim().startsWith('theme=');});
+      var t=c?decodeURIComponent(c.split('=')[1].trim()):null;
+      if(t&&v.indexOf(t)!==-1) document.documentElement.setAttribute('data-theme',t);
+    }());
+  </script>
+
+  <!-- Données SSR → client -->
+  <script id="initial-order" type="application/json" set:html={initialOrderJson} />
+  <meta name="order-id" content={orderId} />
 </head>
 
-<body class="bg-base-200 min-h-screen">
-  
-  <Navbar />
-  
-  <!-- Loading initial -->
-  <div id="loading-initial" class="container mx-auto px-4 py-8">
-    <div class="flex flex-col items-center justify-center min-h-[60vh]">
-      <span class="loading loading-spinner loading-lg text-primary mb-4"></span>
-      <h2 class="text-2xl font-bold mb-2" id="loading-title">Vérification de votre commande...</h2>
-      <p class="text-base-content/60" id="loading-subtitle">Veuillez patienter</p>
+<body class="bg-base-200" style="min-height:100dvh;min-height:100vh;">
+
+  <Navbar restaurantName={restaurantName} logoUrl={logoUrl} activePage="" />
+
+  <!-- ── Loading ───────────────────────────── -->
+  <div id="loadingSection" class="container mx-auto px-4 py-16 max-w-2xl flex flex-col items-center gap-4">
+    <span class="loading loading-spinner loading-lg text-primary"></span>
+    <h2 class="text-xl font-bold" id="loadingTitle">Vérification de votre commande…</h2>
+    <p class="text-base-content/60 text-sm" id="loadingSubtitle">Veuillez patienter</p>
+    <!-- Barre de progression pour le polling Stripe -->
+    <div id="pollingProgress" class="hidden w-full max-w-xs">
+      <progress id="pollingBar" class="progress progress-primary w-full" value="0" max="100"></progress>
+      <p class="text-xs text-center text-base-content/50 mt-1" id="pollingLabel">Attente confirmation Stripe…</p>
     </div>
   </div>
-  
-  <div id="main-content" class="container mx-auto px-4 py-8" style="display: none;">
-    
-    <!-- Message de succès/erreur -->
-    <div id="alert-box" class="alert alert-success shadow-lg mb-6">
-      <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 shrink-0 stroke-current" fill="none" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+
+  <!-- ── Contenu principal ─────────────────── -->
+  <div id="mainContent" class="hidden container mx-auto px-4 py-8 max-w-4xl">
+
+    <!-- Alerte succès / erreur -->
+    <div id="alertBox" class="alert alert-success shadow-lg mb-6" role="alert">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
       </svg>
       <div>
-        <h3 class="font-bold text-lg">Commande confirmée !</h3>
-        <div class="text-sm">Merci pour votre commande. Vous recevrez un email de confirmation.</div>
+        <h3 class="font-bold text-lg" id="alertTitle">Commande confirmée !</h3>
+        <p class="text-sm" id="alertMsg">Merci pour votre commande. Vous recevrez un email de confirmation.</p>
       </div>
     </div>
 
-    <!-- Contenu principal -->
     <div class="grid lg:grid-cols-3 gap-6">
-      
-      <!-- Détails commande -->
-      <div class="lg:col-span-2 space-y-6">
-        
-        <!-- Numéro et statut -->
+
+      <!-- Détails (2/3) -->
+      <div class="lg:col-span-2 space-y-5">
+
+        <!-- En-tête commande -->
         <div class="card bg-base-100 shadow-sm">
-          <div class="card-body">
-            <div class="flex items-center justify-between">
-              <div>
-                <h2 class="text-2xl font-bold" id="order-numero">Chargement...</h2>
-                <p class="text-base-content/60" id="order-date"></p>
-              </div>
-              <div class="badge badge-lg badge-primary" id="order-status">Nouvelle</div>
+          <div class="card-body flex-row justify-between items-start flex-wrap gap-3">
+            <div>
+              <h2 class="text-2xl font-bold font-mono" id="orderNumero">—</h2>
+              <p class="text-base-content/60 text-sm" id="orderDate"></p>
             </div>
+            <span class="badge badge-lg badge-primary" id="orderStatus">—</span>
           </div>
         </div>
 
-        <!-- Informations client -->
+        <!-- Client -->
         <div class="card bg-base-100 shadow-sm">
           <div class="card-body">
-            <h3 class="card-title">Informations</h3>
-            <div class="divider my-2"></div>
-            
-            <div class="grid md:grid-cols-2 gap-4" id="client-info">
-              <!-- Rempli par JS -->
-            </div>
+            <h3 class="card-title text-base">Informations</h3>
+            <div class="divider my-1"></div>
+            <div class="grid sm:grid-cols-2 gap-3" id="clientInfo"></div>
           </div>
         </div>
 
-        <!-- Articles commandés -->
+        <!-- Articles -->
         <div class="card bg-base-100 shadow-sm">
           <div class="card-body">
-            <h3 class="card-title">Votre commande</h3>
-            <div class="divider my-2"></div>
-            
-            <div class="space-y-3" id="order-items">
-              <!-- Rempli par JS -->
-            </div>
+            <h3 class="card-title text-base">Votre commande</h3>
+            <div class="divider my-1"></div>
+            <div class="space-y-3" id="orderItems"></div>
           </div>
         </div>
 
-        <!-- Résumé prix -->
+        <!-- Prix -->
         <div class="card bg-base-100 shadow-sm">
-          <div class="card-body">
-            <div class="space-y-2">
-              <div class="flex justify-between">
-                <span>Sous-total</span>
-                <span id="order-subtotal" class="font-semibold">0.00€</span>
-              </div>
-              <div class="flex justify-between" id="order-delivery-row" style="display: none;">
-                <span id="order-delivery-label">Frais de livraison</span>
-                <span id="order-delivery-fees" class="font-semibold">0.00€</span>
-              </div>
-              <div class="divider my-2"></div>
-              <div class="flex justify-between text-lg">
-                <span class="font-bold">Total</span>
-                <span id="order-total" class="font-bold text-primary">0.00€</span>
-              </div>
+          <div class="card-body space-y-2 text-sm">
+            <div class="flex justify-between">
+              <span class="text-base-content/70">Sous-total</span>
+              <span class="font-semibold tabular-nums" id="orderSubtotal">—</span>
+            </div>
+            <div id="deliveryRow" class="hidden flex justify-between">
+              <span class="text-base-content/70">Frais de livraison</span>
+              <span class="font-semibold tabular-nums" id="orderDelivery">—</span>
+            </div>
+            <div class="flex justify-between border-t border-base-200 pt-2 text-base">
+              <span class="font-bold">Total</span>
+              <span class="font-bold text-primary tabular-nums" id="orderTotal">—</span>
             </div>
           </div>
         </div>
 
       </div>
 
-      <!-- Actions -->
+      <!-- Actions (1/3) -->
       <div class="lg:col-span-1">
         <div class="card bg-base-100 shadow-sm sticky top-4">
-          <div class="card-body space-y-4">
-            
-            <h3 class="card-title">Que faire maintenant ?</h3>
-            
-            <!-- Suivre la commande -->
-            <button id="track-order-btn" class="btn btn-primary btn-block">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+          <div class="card-body space-y-3">
+            <h3 class="card-title text-base">Que faire ?</h3>
+
+            <button id="trackBtn" class="btn btn-primary btn-block gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0zM2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
               </svg>
               Suivre ma commande
             </button>
-            
-            <div class="divider">OU</div>
-            
-            <!-- Retour au menu -->
-            <a href="/menu" class="btn btn-outline btn-block">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+
+            <div class="divider text-xs my-0">ou</div>
+
+            <a href="/menu" class="btn btn-outline btn-block btn-sm gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7"/>
               </svg>
               Retour au menu
             </a>
-            
-            <!-- Contact -->
-            <a href="/contact" class="btn btn-ghost btn-block">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-              </svg>
-              Nous contacter
-            </a>
 
-            <div class="divider"></div>
+            {restaurantTel && (
+              <a href={`tel:${restaurantTel.replace(/\s/g,'')}`} class="btn btn-ghost btn-block btn-sm gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
+                </svg>
+                {restaurantTel}
+              </a>
+            )}
 
-            <!-- Infos utiles -->
-            <div class="alert alert-info">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            <div class="alert alert-info text-xs rounded-xl py-2 mt-2">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
               </svg>
-              <div class="text-sm">
-                <p class="font-semibold">Un email vous a été envoyé</p>
-                <p>Vérifiez vos spams si vous ne le recevez pas</p>
+              <div>
+                <p class="font-semibold">Email de confirmation envoyé</p>
+                <p class="opacity-75">Vérifiez vos spams si besoin</p>
               </div>
             </div>
 
@@ -171,385 +210,274 @@ export const prerender = false;
 </html>
 
 <script>
-// ==========================================
-// 🚀 Imports
-// ==========================================
-import { api } from '../lib/api';
-
-// ==========================================
-// Configuration & Variables
-// ==========================================
-const orderId = new URLSearchParams(window.location.search).get('order');
-let currentOrder = null;
-let pollingInterval = null;
-
-const MAX_POLLING_ATTEMPTS = 20; // 20 tentatives
-const POLLING_INTERVAL = 2000; // 2 secondes entre chaque tentative
-let pollingAttempts = 0;
-
-// ==========================================
-// Utilitaires
-// ==========================================
-function formatPrice(price) {
-  return new Intl.NumberFormat('fr-BE', {
-    style: 'currency',
-    currency: 'EUR',
-  }).format(price);
-}
-
-function formatDate(isoDate) {
-  const date = new Date(isoDate);
-  return new Intl.DateTimeFormat('fr-BE', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date);
-}
-
-const statusLabels = {
-  'nouvelle': 'Nouvelle',
-  'en_preparation': 'En préparation',
-  'prete': 'Prête',
-  'en_livraison': 'En livraison',
-  'livree': 'Livrée',
-  'terminee': 'Terminée',
-  'annulee': 'Annulée'
-};
-
-// ==========================================
-// Chargement Config & Thème
-// ==========================================
-async function loadConfig() {
-  try {
-    console.log('🔄 Chargement config...');
-    
-    // ✅ Utilise api.ts
-    const config = await api.config.get();
-    
-    if (config.theme?.daisy) {
-      document.documentElement.setAttribute('data-theme', config.theme.daisy);
-    }
-    
-    if (config.theme?.logo) {
-      // ✅ Utilise api.images.getUrl()
-      const logoUrl = api.images.getUrl(config.theme.logo);
-      const favicon = document.getElementById('favicon');
-      if (favicon) favicon.href = logoUrl;
-    }
-    
-    console.log('✅ Config chargée');
-    
-  } catch (error) {
-    console.error('❌ Erreur config:', error);
+  // ── Helpers ───────────────────────────────────
+  function getApiBase() {
+    return document.querySelector<HTMLMetaElement>('meta[name="api-url"]')?.content
+      ?? 'https://api.rareburger.be/api';
   }
-}
-
-// ==========================================
-// Récupération Commande
-// ==========================================
-async function fetchOrder(orderId) {
-  try {
-    console.log('🔍 Récupération commande:', orderId);
-    
-    // ✅ Utilise api.commandes.getPublic()
-    const order = await api.commandes.getPublic(orderId);
-    
-    console.log('✅ Commande récupérée:', order);
-    
-    return order;
-    
-  } catch (error) {
-    console.error('❌ Erreur récupération commande:', error);
-    
-    // Message d'erreur adapté
-    if (error.message.includes('404') || error.message.includes('introuvable')) {
-      throw new Error('Commande introuvable');
-    }
-    throw new Error('Erreur lors de la récupération de la commande');
+  function getOrderId() {
+    return document.querySelector<HTMLMetaElement>('meta[name="order-id"]')?.content
+      ?? new URLSearchParams(window.location.search).get('order')
+      ?? '';
   }
-}
 
-// ==========================================
-// Polling pour Stripe
-// ==========================================
-function startPollingForPayment(orderId) {
-  console.log('🔄 Démarrage polling pour confirmation paiement');
-  
-  updateLoadingMessage('En attente de confirmation du paiement...', 'Cela peut prendre quelques secondes');
-  
-  pollingInterval = setInterval(async () => {
-    pollingAttempts++;
-    console.log(`🔄 Polling tentative ${pollingAttempts}/${MAX_POLLING_ATTEMPTS}`);
-    
+  const fmt = (n: number) =>
+    new Intl.NumberFormat('fr-BE', { style: 'currency', currency: 'EUR' }).format(n);
+
+  function esc(v: unknown): string {
+    const d = document.createElement('div');
+    d.textContent = String(v ?? '');
+    return d.innerHTML;
+  }
+
+  function fmtDate(s: string): string {
     try {
-      const order = await fetchOrder(orderId);
-      
-      // Vérifier si le paiement est confirmé
-      if (order.paiement?.statut === 'paye') {
-        console.log('✅ Paiement confirmé !');
-        stopPolling();
-        
-        // Vider le panier
-        localStorage.removeItem('cart');
-        localStorage.removeItem('last_order');
-        window.dispatchEvent(new Event('cart-updated'));
-        
-        // Afficher la commande
-        displayOrder(order);
-        showContent();
-      } else if (order.paiement?.statut === 'echec') {
-        console.log('❌ Paiement échoué');
-        stopPolling();
-        window.location.href = `/payment-cancel?order=${orderId}&reason=payment_failed`;
-      } else if (pollingAttempts >= MAX_POLLING_ATTEMPTS) {
-        console.log('⏱️ Timeout polling');
-        stopPolling();
-        window.location.href = `/payment-cancel?order=${orderId}&reason=timeout`;
-      }
-    } catch (error) {
-      console.error('Erreur polling:', error);
-      if (pollingAttempts >= MAX_POLLING_ATTEMPTS) {
-        stopPolling();
-        showError('Timeout', 'La confirmation du paiement prend trop de temps. Veuillez contacter le restaurant.');
-      }
-    }
-  }, POLLING_INTERVAL);
-}
-
-function stopPolling() {
-  if (pollingInterval) {
-    clearInterval(pollingInterval);
-    pollingInterval = null;
+      return new Intl.DateTimeFormat('fr-BE', {
+        day: 'numeric', month: 'long', year: 'numeric',
+        hour: '2-digit', minute: '2-digit',
+      }).format(new Date(s));
+    } catch { return s; }
   }
-}
 
-function updateLoadingMessage(title, subtitle) {
-  document.getElementById('loading-title').textContent = title;
-  document.getElementById('loading-subtitle').textContent = subtitle;
-}
+  function q<T extends HTMLElement>(id: string) { return document.getElementById(id) as T; }
 
-// ==========================================
-// Chargement Principal
-// ==========================================
-async function loadOrder() {
-  if (!orderId) {
-    // Essayer de récupérer depuis localStorage
-    const lastOrder = localStorage.getItem('last_order');
-    if (lastOrder) {
+  const STATUS_LABELS: Record<string,string> = {
+    nouvelle:'Nouvelle', en_preparation:'En préparation', prete:'Prête',
+    en_livraison:'En livraison', livree:'Livrée', terminee:'Terminée', annulee:'Annulée',
+  };
+
+  // ── Fetch commande publique ───────────────────
+  async function fetchOrder(id: string): Promise<Record<string,any>> {
+    const res = await fetch(`${getApiBase()}/commandes/public/${encodeURIComponent(id)}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  }
+
+  // ── Afficher la commande ──────────────────────
+  function displayOrder(order: Record<string,any>) {
+    q('orderNumero').textContent = `#${order.numero}`;
+    q('orderDate').textContent   = fmtDate(order.date_creation);
+    q('orderStatus').textContent = STATUS_LABELS[order.statut as string] ?? order.statut;
+
+    // Client
+    const client = order.client as Record<string,any> ?? {};
+    const typeLabel = order.type === 'livraison' ? 'Livraison'
+      : order.type === 'emporter' ? 'À emporter' : 'Sur place';
+
+    const clientEl = q('clientInfo');
+    clientEl.innerHTML = '';
+    const fields: [string,string][] = [
+      ['Nom',        `${esc(client.prenom ?? '')} ${esc(client.nom ?? '')}`],
+      ['Téléphone',  esc(client.telephone ?? '—')],
+      ['Email',      esc(client.email ?? '—')],
+      ['Mode',       esc(typeLabel)],
+    ];
+    if (order.numero_table)    fields.push(['Table',          esc(order.numero_table)]);
+    if (order.heure_souhaitee) fields.push(['Heure souhaitée',esc(order.heure_souhaitee)]);
+    if (order.type === 'livraison' && client.adresse) {
+      const a = client.adresse as Record<string,string>;
+      fields.push(['Adresse', `${esc(a.rue)} ${esc(a.numero)}, ${esc(a.code_postal)} ${esc(a.ville)}`]);
+    }
+    fields.forEach(([label, val]) => {
+      const div = document.createElement('div');
+      div.innerHTML = `<p class="text-xs text-base-content/60">${esc(label)}</p><p class="font-semibold text-sm">${val}</p>`;
+      clientEl.appendChild(div);
+    });
+
+    // Articles — DOM propre
+    const itemsEl = q('orderItems');
+    itemsEl.innerHTML = '';
+    (order.articles as any[]).forEach(item => {
+      const row = document.createElement('div');
+      row.className = 'flex justify-between items-start border-b border-base-200 pb-3 last:border-0 last:pb-0 gap-3';
+      const details: string[] = [];
+      item.supplements?.forEach((s: any) => details.push(`+ ${s.name}`));
+      item.removed_ingredients?.forEach((r: string) => details.push(`Sans ${r}`));
+      item.choices_selected?.forEach((c: any) => details.push(`• ${c.option_name}`));
+      row.innerHTML = `
+        <div class="flex-1">
+          <p class="font-semibold text-sm">${item.quantite}× ${esc(item.nom)}</p>
+          ${details.length ? `<p class="text-xs text-base-content/50">${details.map(esc).join(' · ')}</p>` : ''}
+        </div>
+        <span class="font-bold text-sm tabular-nums shrink-0">${fmt(item.prix * item.quantite)}</span>
+      `;
+      itemsEl.appendChild(row);
+    });
+
+    // Notes
+    if (order.notes) {
+      const noteEl = document.createElement('div');
+      noteEl.className = 'alert mt-3 text-sm py-2';
+      noteEl.innerHTML = `<span class="font-semibold">💬 Note :</span> ${esc(order.notes)}`;
+      itemsEl.appendChild(noteEl);
+    }
+
+    // Prix
+    q('orderSubtotal').textContent = fmt(order.sous_total ?? 0);
+    q('orderTotal').textContent    = fmt(order.prix_total ?? 0);
+    if (order.frais_livraison > 0) {
+      q('deliveryRow').classList.remove('hidden');
+      q('orderDelivery').textContent = fmt(order.frais_livraison);
+    }
+  }
+
+  // ── Afficher / cacher sections ────────────────
+  function showContent(success = true, title = '', msg = '') {
+    q('loadingSection').classList.add('hidden');
+    q('mainContent').classList.remove('hidden');
+
+    if (!success) {
+      const box = q('alertBox');
+      box.className = 'alert alert-error shadow-lg mb-6';
+      box.querySelector('svg')!.innerHTML = `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>`;
+    }
+    if (title) q('alertTitle').textContent = title;
+    if (msg)   q('alertMsg').textContent   = msg;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function updateLoading(title: string, sub: string) {
+    q('loadingTitle').textContent    = title;
+    q('loadingSubtitle').textContent = sub;
+  }
+
+  // ── Polling Stripe ────────────────────────────
+  // Stripe peut prendre quelques secondes à déclencher le webhook
+  const MAX_ATTEMPTS   = 30;   // 30 × 2s = 60s max
+  const POLL_INTERVAL  = 2000; // 2s entre chaque tentative
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
+  let attempts = 0;
+
+  function stopPolling() {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  }
+
+  function startPolling(id: string) {
+    updateLoading('En attente de confirmation du paiement…', 'Stripe vérifie votre paiement, cela peut prendre quelques secondes');
+    q('pollingProgress').classList.remove('hidden');
+    attempts = 0;
+
+    pollTimer = setInterval(async () => {
+      attempts++;
+      const pct = Math.round((attempts / MAX_ATTEMPTS) * 100);
+      (q<HTMLProgressElement>('pollingBar')).value = pct;
+      q('pollingLabel').textContent = `Tentative ${attempts}/${MAX_ATTEMPTS}…`;
+
       try {
-        const order = JSON.parse(lastOrder);
-        console.log('📦 Commande depuis localStorage:', order);
-        
-        // Vérifier avec le serveur
-        const serverOrder = await fetchOrder(order.id);
-        handleOrder(serverOrder);
-        return;
-      } catch (error) {
-        showError('Commande introuvable', 'Aucune commande récente trouvée');
+        const order = await fetchOrder(id);
+        const statut = (order.paiement as any)?.statut;
+
+        if (statut === 'paye') {
+          // ✅ Paiement confirmé par le webhook Stripe
+          stopPolling();
+          localStorage.removeItem('cart');
+          localStorage.removeItem('last_order');
+          window.dispatchEvent(new CustomEvent('cart-updated'));
+          displayOrder(order);
+          showContent(true, 'Paiement confirmé !', 'Votre commande a été enregistrée. Vous recevrez un email de confirmation.');
+
+        } else if (statut === 'echec') {
+          // ❌ Paiement refusé
+          stopPolling();
+          window.location.href = `/payment-cancel?order=${id}&reason=payment_failed`;
+
+        } else if (attempts >= MAX_ATTEMPTS) {
+          // ⏱️ Timeout — le webhook n'est pas arrivé à temps
+          // En prod avec ngrok/domaine réel ça marche, en localhost c'est normal
+          stopPolling();
+          // On affiche quand même la commande avec un message informatif
+          displayOrder(order);
+          showContent(
+            true,
+            'Commande enregistrée',
+            'Votre paiement est en cours de vérification. Vous recevrez un email dès confirmation.'
+          );
+          q('alertBox').className = 'alert alert-warning shadow-lg mb-6';
+        }
+      } catch {
+        if (attempts >= MAX_ATTEMPTS) {
+          stopPolling();
+          showContent(false, 'Erreur', 'Impossible de vérifier le statut du paiement. Contactez le restaurant.');
+        }
+      }
+    }, POLL_INTERVAL);
+  }
+
+  // ── Logique principale ────────────────────────
+  async function init() {
+    const id = getOrderId();
+
+    if (!id) {
+      // Pas d'ID → essayer localStorage
+      const saved = localStorage.getItem('last_order');
+      if (saved) {
+        try {
+          const cached = JSON.parse(saved) as Record<string,any>;
+          const order  = await fetchOrder(cached.id ?? '');
+          handleOrder(order);
+        } catch {
+          showContent(false, 'Erreur', 'Aucune commande trouvée');
+        }
+      } else {
+        showContent(false, 'Erreur', 'Aucun identifiant de commande');
+      }
+      return;
+    }
+
+    // Essayer la commande pré-chargée SSR
+    const preloadEl = document.getElementById('initial-order');
+    let order: Record<string,any> | null = null;
+    try {
+      const raw = preloadEl?.textContent?.trim();
+      if (raw && raw !== 'null') order = JSON.parse(raw);
+    } catch {}
+
+    // Fallback : fetch côté client
+    if (!order) {
+      try {
+        order = await fetchOrder(id);
+      } catch {
+        showContent(false, 'Erreur', 'Commande introuvable');
         return;
       }
     }
-    
-    showError('Erreur', 'Aucun identifiant de commande fourni');
-    return;
-  }
 
-  try {
-    const order = await fetchOrder(orderId);
     handleOrder(order);
-  } catch (error) {
-    showError('Erreur', error.message || 'Impossible de charger la commande');
-  }
-}
-
-function handleOrder(order) {
-  currentOrder = order;
-  
-  // Sauvegarder dans localStorage
-  localStorage.setItem('last_order', JSON.stringify(order));
-  
-  const paymentMode = order.paiement?.mode;
-  const paymentStatus = order.paiement?.statut;
-  
-  console.log(`💳 Mode: ${paymentMode} | Statut: ${paymentStatus}`);
-  
-  // Si paiement en ligne et en attente
-  if (paymentMode === 'en_ligne' && paymentStatus === 'en_attente_paiement') {
-    startPollingForPayment(order.id);
-  }
-  // Si paiement confirmé ou autre mode
-  else if (paymentMode === 'en_ligne' && paymentStatus === 'paye') {
-    // Vider le panier
-    localStorage.removeItem('cart');
-    window.dispatchEvent(new Event('cart-updated'));
-    displayOrder(order);
-    showContent();
-  }
-  // Autres modes de paiement
-  else {
-    displayOrder(order);
-    showContent();
-  }
-}
-
-// ==========================================
-// Affichage
-// ==========================================
-function showContent() {
-  document.getElementById('loading-initial').style.display = 'none';
-  document.getElementById('main-content').style.display = 'block';
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-}
-
-function showError(title, message) {
-  document.getElementById('loading-initial').style.display = 'none';
-  document.getElementById('main-content').style.display = 'block';
-  
-  const alertBox = document.getElementById('alert-box');
-  alertBox.className = 'alert alert-error shadow-lg mb-6';
-  alertBox.innerHTML = `
-    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 shrink-0 stroke-current" fill="none" viewBox="0 0 24 24">
-      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-    </svg>
-    <div>
-      <h3 class="font-bold text-lg">${title}</h3>
-      <div class="text-sm">${message}</div>
-    </div>
-  `;
-}
-
-function displayOrder(order) {
-  // Numéro et date
-  document.getElementById('order-numero').textContent = `Commande #${order.numero}`;
-  document.getElementById('order-date').textContent = formatDate(order.date_creation);
-  
-  // Statut
-  const statusBadge = document.getElementById('order-status');
-  statusBadge.textContent = statusLabels[order.statut] || order.statut;
-
-  // Informations client
-  const clientInfo = document.getElementById('client-info');
-  let clientHTML = `
-    <div>
-      <p class="text-sm text-base-content/60">Nom</p>
-      <p class="font-semibold">${order.client.prenom} ${order.client.nom}</p>
-    </div>
-    <div>
-      <p class="text-sm text-base-content/60">Téléphone</p>
-      <p class="font-semibold">${order.client.telephone}</p>
-    </div>
-    <div>
-      <p class="text-sm text-base-content/60">Email</p>
-      <p class="font-semibold">${order.client.email}</p>
-    </div>
-    <div>
-      <p class="text-sm text-base-content/60">Mode</p>
-      <p class="font-semibold capitalize">${order.type.replace('_', ' ')}</p>
-    </div>
-  `;
-
-  // Adresse si livraison
-  if (order.type === 'livraison' && order.client.adresse) {
-    const addr = order.client.adresse;
-    clientHTML += `
-      <div class="md:col-span-2">
-        <p class="text-sm text-base-content/60">Adresse de livraison</p>
-        <p class="font-semibold">${addr.rue} ${addr.numero}, ${addr.code_postal} ${addr.ville}</p>
-      </div>
-    `;
   }
 
-  // Table si sur place
-  if (order.numero_table) {
-    clientHTML += `
-      <div>
-        <p class="text-sm text-base-content/60">Table</p>
-        <p class="font-semibold">${order.numero_table}</p>
-      </div>
-    `;
+  function handleOrder(order: Record<string,any>) {
+    localStorage.setItem('last_order', JSON.stringify(order));
+
+    const payMode   = (order.paiement as any)?.mode;
+    const payStatut = (order.paiement as any)?.statut;
+
+    if (payMode === 'en_ligne' && payStatut === 'en_attente_paiement') {
+      // Paiement Stripe en attente → polling
+      startPolling(order.id as string);
+    } else if (payMode === 'en_ligne' && payStatut === 'paye') {
+      // Déjà payé (retour sur la page après rechargement)
+      localStorage.removeItem('cart');
+      window.dispatchEvent(new CustomEvent('cart-updated'));
+      displayOrder(order);
+      showContent(true, 'Paiement confirmé !', 'Votre commande a bien été enregistrée.');
+    } else {
+      // Paiement sur place / à la réception
+      localStorage.removeItem('cart');
+      window.dispatchEvent(new CustomEvent('cart-updated'));
+      displayOrder(order);
+      showContent(true, 'Commande enregistrée !', 'Votre commande a bien été prise en compte.');
+    }
   }
 
-  // Heure si à emporter
-  if (order.heure_souhaitee) {
-    clientHTML += `
-      <div>
-        <p class="text-sm text-base-content/60">Heure souhaitée</p>
-        <p class="font-semibold">${order.heure_souhaitee}</p>
-      </div>
-    `;
-  }
+  // ── Bouton suivre commande ────────────────────
+  q('trackBtn')?.addEventListener('click', () => {
+    const saved = localStorage.getItem('last_order');
+    const numero = saved ? (JSON.parse(saved) as any).numero : '';
+    window.location.href = numero ? `/status?numero=${numero}` : '/status';
+  });
 
-  clientInfo.innerHTML = clientHTML;
-
-  // Articles
-  const itemsContainer = document.getElementById('order-items');
-  itemsContainer.innerHTML = order.articles.map(item => `
-    <div class="flex justify-between items-start border-b border-base-200 pb-3">
-      <div class="flex-1">
-        <p class="font-semibold">${item.quantite}x ${item.nom}</p>
-        ${item.supplements && item.supplements.length > 0 ? `
-          <p class="text-sm text-base-content/70">+ ${item.supplements.map(s => s.name).join(', ')}</p>
-        ` : ''}
-        ${item.removed_ingredients && item.removed_ingredients.length > 0 ? `
-          <p class="text-sm text-base-content/70">Sans: ${item.removed_ingredients.join(', ')}</p>
-        ` : ''}
-      </div>
-      <span class="font-semibold">${formatPrice(item.prix * item.quantite)}</span>
-    </div>
-  `).join('');
-
-  // Prix
-  document.getElementById('order-subtotal').textContent = formatPrice(order.sous_total);
-  
-  if (order.frais_livraison && order.frais_livraison > 0) {
-    document.getElementById('order-delivery-row').style.display = 'flex';
-    document.getElementById('order-delivery-fees').textContent = formatPrice(order.frais_livraison);
-  }
-  
-  document.getElementById('order-total').textContent = formatPrice(order.prix_total);
-
-  // Notes
-  if (order.notes) {
-    const notesDiv = document.createElement('div');
-    notesDiv.className = 'alert mt-4';
-    notesDiv.innerHTML = `
-      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
-      </svg>
-      <div>
-        <p class="text-sm font-semibold">Commentaires</p>
-        <p class="text-sm">${order.notes}</p>
-      </div>
-    `;
-    itemsContainer.parentElement.appendChild(notesDiv);
-  }
-}
-
-// ==========================================
-// Bouton Suivre
-// ==========================================
-document.getElementById('track-order-btn')?.addEventListener('click', () => {
-  if (currentOrder) {
-    window.location.href = `/status?numero=${currentOrder.numero}`;
-  } else {
-    window.location.href = '/status';
-  }
-});
-
-// ==========================================
-// Cleanup au déchargement
-// ==========================================
-window.addEventListener('beforeunload', () => {
-  stopPolling();
-});
-
-// ==========================================
-// Initialisation
-// ==========================================
-console.log('✅ Page de confirmation chargée');
-
-loadConfig();
-loadOrder();
+  // ── Cleanup ───────────────────────────────────
+  window.addEventListener('beforeunload', stopPolling);
+  document.addEventListener('astro:page-load', () => void init());
+  void init();
 </script>

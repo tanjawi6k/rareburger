@@ -223,29 +223,33 @@ const API_BASE_URL =
 // TOKEN — cookie en priorité, localStorage en fallback
 // ============================================
 
-function getAuthToken(): string | null {
-  if (typeof document === 'undefined') return null;
-
-  // 1. Chercher dans les cookies
-  for (const cookie of document.cookie.split(';')) {
-    const [name, value] = cookie.trim().split('=');
-    if (name === 'admin_token') return decodeURIComponent(value);
-  }
-
-  // 2. Fallback localStorage
-  try {
-    return localStorage.getItem('admin_token');
-  } catch {
+function getAuthToken(cookieHeader?: string): string | null {
+  // ── Côté serveur (SSR) : lire depuis le header Cookie passé en paramètre ──
+  if (typeof document === 'undefined') {
+    if (!cookieHeader) return null;
+    for (const part of cookieHeader.split(';')) {
+      const [name, value] = part.trim().split('=');
+      if (name === 'admin_token') return decodeURIComponent(value ?? '');
+    }
     return null;
   }
+
+  // ── Côté client : lire le cookie du navigateur ────────────────────────────
+  for (const cookie of document.cookie.split(';')) {
+    const [name, value] = cookie.trim().split('=');
+    if (name === 'admin_token') return decodeURIComponent(value ?? '');
+  }
+
+  // Fallback localStorage
+  try { return localStorage.getItem('admin_token'); } catch { return null; }
 }
 
 // ============================================
 // FETCH DE BASE
 // ============================================
 
-async function apiFetch<T>(url: string, options: RequestInit = {}): Promise<T> {
-  const token = getAuthToken();
+async function apiFetch<T>(url: string, options: RequestInit = {}, cookieHeader?: string): Promise<T> {
+  const token = getAuthToken(cookieHeader);
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
