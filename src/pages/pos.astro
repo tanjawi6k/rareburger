@@ -1366,7 +1366,7 @@ const posUser = { name: user.name, role: user.roles[0] };
     if (!currentOrderId) return;
     const statut = (q<HTMLSelectElement>('omStatut')).value;
     try {
-      await apiFetch(`/commandes/${encodeURIComponent(currentOrderId)}`, {
+      await apiFetch(`/commandes/${encodeURIComponent(currentOrderId)}/status`, {
         method: 'PUT', headers: authH(), body: JSON.stringify({ statut }),
       });
       dialog('orderModal').close();
