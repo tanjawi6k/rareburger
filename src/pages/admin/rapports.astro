@@ -1,0 +1,716 @@
+---
+// src/pages/admin/rapports.astro
+import AdminLayout from '../../layouts/AdminLayout.astro';
+export const prerender = false;
+
+const user = Astro.locals.user;
+if (!user?.roles.includes('admin')) return Astro.redirect('/login');
+
+const apiBaseUrl: string = import.meta.env.PUBLIC_API_URL ?? 'https://api.rareburger.be/api';
+---
+
+<AdminLayout title="Rapports & Statistiques">
+
+  <!-- En-tête -->
+  <div class="mb-6 flex flex-wrap justify-between items-start gap-3">
+    <div>
+      <h1 class="text-3xl font-bold">Rapports & Statistiques</h1>
+      <p class="text-base-content/60">Analyse de vos ventes et exports comptables</p>
+    </div>
+    <div class="flex gap-2 flex-wrap">
+      <button id="btnExportCSV" class="btn btn-success gap-2">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+        </svg>
+        Export CSV comptable
+      </button>
+      <button id="btnPrintZCaisse" class="btn btn-outline gap-2">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/>
+        </svg>
+        Z de caisse
+      </button>
+    </div>
+  </div>
+
+  <!-- Filtres période -->
+  <div class="card bg-base-100 shadow-sm mb-6">
+    <div class="card-body p-4">
+      <div class="flex flex-wrap gap-3 items-end">
+        <div class="form-control">
+          <label class="label py-1"><span class="label-text text-xs font-semibold">Période rapide</span></label>
+          <div class="join">
+            <button class="btn btn-sm join-item" data-period="today">Aujourd'hui</button>
+            <button class="btn btn-sm join-item btn-active" data-period="week">7 jours</button>
+            <button class="btn btn-sm join-item" data-period="month">30 jours</button>
+            <button class="btn btn-sm join-item" data-period="year">12 mois</button>
+          </div>
+        </div>
+        <div class="flex gap-2 items-end">
+          <div class="form-control">
+            <label class="label py-1"><span class="label-text text-xs font-semibold">Du</span></label>
+            <input type="date" id="dateStart" class="input input-sm input-bordered" />
+          </div>
+          <div class="form-control">
+            <label class="label py-1"><span class="label-text text-xs font-semibold">Au</span></label>
+            <input type="date" id="dateEnd" class="input input-sm input-bordered" />
+          </div>
+          <button id="btnApply" class="btn btn-primary btn-sm">Appliquer</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Loader -->
+  <div id="loader" class="flex justify-center py-20">
+    <span class="loading loading-spinner loading-lg text-primary"></span>
+  </div>
+
+  <!-- Contenu principal -->
+  <div id="content" class="hidden space-y-6">
+
+    <!-- KPIs -->
+    <div class="stats stats-vertical lg:stats-horizontal shadow w-full bg-base-100">
+      <div class="stat">
+        <div class="stat-title">Chiffre d'affaires</div>
+        <div class="stat-value text-primary tabular-nums" id="kpiCA">—</div>
+        <div class="stat-desc" id="kpiPeriode">—</div>
+      </div>
+      <div class="stat">
+        <div class="stat-title">Commandes</div>
+        <div class="stat-value tabular-nums" id="kpiNb">—</div>
+        <div class="stat-desc">commandes validées</div>
+      </div>
+      <div class="stat">
+        <div class="stat-title">Panier moyen</div>
+        <div class="stat-value text-success tabular-nums" id="kpiPanier">—</div>
+        <div class="stat-desc">par commande</div>
+      </div>
+      <div class="stat">
+        <div class="stat-title">TVA collectée</div>
+        <div class="stat-value text-warning tabular-nums" id="kpiTVA">—</div>
+        <div class="stat-desc">6% + 12%</div>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+      <!-- Évolution CA (grand graphique) -->
+      <div class="lg:col-span-2 card bg-base-100 shadow-sm">
+        <div class="card-body">
+          <h2 class="card-title text-base">Évolution du chiffre d'affaires</h2>
+          <div style="position:relative;height:260px;">
+            <canvas id="chartCA"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Z de caisse aujourd'hui -->
+      <div class="card bg-base-100 shadow-sm">
+        <div class="card-body gap-3">
+          <h2 class="card-title text-base">Z de caisse — aujourd'hui</h2>
+          <div id="zCaisseContent" class="space-y-2 text-sm"></div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+
+      <!-- Répartition par type -->
+      <div class="card bg-base-100 shadow-sm">
+        <div class="card-body">
+          <h2 class="card-title text-base">Par type de commande</h2>
+          <div style="position:relative;height:200px;">
+            <canvas id="chartType"></canvas>
+          </div>
+          <div id="typeDetails" class="space-y-1 text-sm mt-2"></div>
+        </div>
+      </div>
+
+      <!-- Répartition par paiement -->
+      <div class="card bg-base-100 shadow-sm">
+        <div class="card-body">
+          <h2 class="card-title text-base">Par mode de paiement</h2>
+          <div style="position:relative;height:200px;">
+            <canvas id="chartPaiement"></canvas>
+          </div>
+          <div id="paiementDetails" class="space-y-1 text-sm mt-2"></div>
+        </div>
+      </div>
+
+      <!-- Heures de pointe -->
+      <div class="card bg-base-100 shadow-sm">
+        <div class="card-body">
+          <h2 class="card-title text-base">Heures de pointe</h2>
+          <div style="position:relative;height:200px;">
+            <canvas id="chartHeures"></canvas>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+      <!-- Top produits -->
+      <div class="card bg-base-100 shadow-sm">
+        <div class="card-body">
+          <h2 class="card-title text-base">Top 10 produits</h2>
+          <div style="position:relative;height:280px;">
+            <canvas id="chartTopProduits"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- TVA détaillée -->
+      <div class="card bg-base-100 shadow-sm">
+        <div class="card-body gap-4">
+          <h2 class="card-title text-base">Détail TVA (Belgique)</h2>
+          <div class="overflow-x-auto">
+            <table class="table table-sm">
+              <thead>
+                <tr>
+                  <th>Type</th>
+                  <th>Taux</th>
+                  <th>Montant TVA</th>
+                  <th>Base HT</th>
+                </tr>
+              </thead>
+              <tbody id="tvaTable"></tbody>
+              <tfoot>
+                <tr class="font-bold">
+                  <td colspan="2">Total</td>
+                  <td id="tvaTotalMontant">—</td>
+                  <td id="tvaTotalHT">—</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          <div class="alert alert-info text-xs py-2 rounded-xl">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <span>TVA restauration BE : 12% sur place · 6% emporter/livraison</span>
+          </div>
+
+          <!-- Panier moyen par type -->
+          <h3 class="font-semibold text-sm mt-2">Panier moyen par type</h3>
+          <div id="panierParType" class="space-y-1.5"></div>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- Toast -->
+  <div id="toast-container" class="toast toast-top toast-end z-50" aria-live="polite"></div>
+
+  <meta name="api-url" content={apiBaseUrl} />
+</AdminLayout>
+
+<script>
+  // ── Chart.js via npm (bundlé par Astro/Vite) ─
+  import Chart from 'chart.js/auto';
+
+  // ── Types ─────────────────────────────────────
+  interface StatsData {
+    periode:              { start: string; end: string };
+    ca_total:             number;
+    nb_commandes:         number;
+    panier_moyen:         number;
+    evolution:            { date: string; ca: number; commandes: number }[];
+    repartition_type:     { type: string; count: number; ca: number }[];
+    repartition_paiement: { mode: string; count: number; ca: number }[];
+    heures_pointe:        { heure: number; commandes: number }[];
+    top_products:         { nom: string; quantite: number; ca: number }[];
+    tva:                  { taux_12_sur_place: number; taux_6_emporter: number; total: number };
+    z_caisse:             { date: string; nb_commandes: number; ca_total: number; par_mode: Record<string, { count: number; ca: number }> };
+    panier_par_type:      Record<string, number>;
+  }
+
+  // ── Helpers ───────────────────────────────────
+  function getApiBase() {
+    return document.querySelector<HTMLMetaElement>('meta[name="api-url"]')?.content
+      ?? 'https://api.rareburger.be/api';
+  }
+  function getToken() {
+    const c = document.cookie.split(';').find(x => x.trim().startsWith('admin_token='));
+    return c ? decodeURIComponent(c.split('=')[1].trim()) : '';
+  }
+  function authH(): Record<string,string> {
+    return { 'Authorization': `Bearer ${getToken()}`, 'Content-Type': 'application/json' };
+  }
+  const fmt = (n: number) =>
+    new Intl.NumberFormat('fr-BE', { style: 'currency', currency: 'EUR' }).format(n);
+  function esc(v: unknown): string {
+    const d = document.createElement('div'); d.textContent = String(v ?? ''); return d.innerHTML;
+  }
+  function q<T extends HTMLElement>(id: string) { return document.getElementById(id) as T; }
+
+  function showToast(msg: string, type: 'success'|'error'|'info'|'warning' = 'info') {
+    const c = q('toast-container');
+    const el = document.createElement('div');
+    el.className = `alert alert-${type} shadow text-sm py-2 px-4 rounded-xl`;
+    el.textContent = msg;
+    c.appendChild(el);
+    setTimeout(() => el.remove(), 4000);
+  }
+
+  const TYPE_LABELS: Record<string,string> = {
+    sur_place: 'Sur place', emporter: 'À emporter', livraison: 'Livraison',
+  };
+  const MODE_LABELS: Record<string,string> = {
+    comptoir: 'Au comptoir', reception: 'À la réception',
+    en_ligne: 'En ligne', especes: 'Espèces',
+  };
+
+  // ── État ──────────────────────────────────────
+  let charts: Record<string, any> = {};
+  let currentStart = '';
+  let currentEnd   = '';
+
+  // ── Période ───────────────────────────────────
+  function setDates(start: string, end: string) {
+    currentStart = start;
+    currentEnd   = end;
+    (q<HTMLInputElement>('dateStart')).value = start;
+    (q<HTMLInputElement>('dateEnd')).value   = end;
+  }
+
+  function isoDate(d: Date): string {
+    return d.toISOString().slice(0, 10);
+  }
+
+  function setPeriod(period: string) {
+    const now = new Date();
+    const end = isoDate(now);
+    if (period === 'today') {
+      setDates(end, end);
+    } else if (period === 'week') {
+      const s = new Date(now); s.setDate(now.getDate() - 6);
+      setDates(isoDate(s), end);
+    } else if (period === 'month') {
+      const s = new Date(now); s.setDate(now.getDate() - 29);
+      setDates(isoDate(s), end);
+    } else if (period === 'year') {
+      const s = new Date(now); s.setFullYear(now.getFullYear() - 1);
+      setDates(isoDate(s), end);
+    }
+
+    document.querySelectorAll<HTMLButtonElement>('[data-period]').forEach(btn => {
+      btn.classList.toggle('btn-active', btn.dataset.period === period);
+    });
+  }
+
+  // ── Chargement stats ──────────────────────────
+  async function load() {
+    q('loader').classList.remove('hidden');
+    q('content').classList.add('hidden');
+
+    try {
+      const res = await fetch(
+        `${getApiBase()}/stats/advanced?start=${currentStart}&end=${currentEnd}`,
+        { headers: authH() }
+      );
+      if (res.status === 401) { window.location.href = '/login?expired=1'; return; }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data: StatsData = await res.json();
+
+      renderKPIs(data);
+      renderZCaisse(data.z_caisse);
+      renderTVA(data);
+
+      // Chart already imported above
+      renderChartCA(data.evolution);
+      renderChartType(data.repartition_type);
+      renderChartPaiement(data.repartition_paiement);
+      renderChartHeures(data.heures_pointe);
+      renderChartTopProduits(data.top_products);
+
+      q('loader').classList.add('hidden');
+      q('content').classList.remove('hidden');
+    } catch (err: unknown) {
+      q('loader').innerHTML = `<div class="alert alert-error max-w-md mx-auto">
+        <span>Erreur : ${esc(err instanceof Error ? err.message : String(err))}</span>
+      </div>`;
+    }
+  }
+
+  // ── KPIs ──────────────────────────────────────
+  function renderKPIs(d: StatsData) {
+    q('kpiCA').textContent     = fmt(d.ca_total);
+    q('kpiNb').textContent     = String(d.nb_commandes);
+    q('kpiPanier').textContent = fmt(d.panier_moyen);
+    q('kpiTVA').textContent    = fmt(d.tva.total);
+    q('kpiPeriode').textContent = `${d.periode.start} → ${d.periode.end}`;
+  }
+
+  // ── Z de caisse ───────────────────────────────
+  function renderZCaisse(z: StatsData['z_caisse']) {
+    const el = q('zCaisseContent');
+    el.innerHTML = '';
+
+    const header = document.createElement('div');
+    header.className = 'flex justify-between items-center pb-2 border-b border-base-200';
+    header.innerHTML = `
+      <span class="font-semibold">${esc(z.date)}</span>
+      <span class="badge badge-primary">${z.nb_commandes} commandes</span>
+    `;
+    el.appendChild(header);
+
+    Object.entries(z.par_mode).forEach(([mode, v]) => {
+      const row = document.createElement('div');
+      row.className = 'flex justify-between items-center';
+      row.innerHTML = `
+        <span class="text-base-content/70">${esc(MODE_LABELS[mode] ?? mode)}</span>
+        <div class="text-right">
+          <p class="font-semibold tabular-nums">${fmt(v.ca)}</p>
+          <p class="text-xs text-base-content/50">${v.count} cmd</p>
+        </div>
+      `;
+      el.appendChild(row);
+    });
+
+    const total = document.createElement('div');
+    total.className = 'flex justify-between items-center border-t border-base-200 pt-2 font-bold';
+    total.innerHTML = `
+      <span>Total journée</span>
+      <span class="text-primary tabular-nums">${fmt(z.ca_total)}</span>
+    `;
+    el.appendChild(total);
+  }
+
+  // ── TVA ───────────────────────────────────────
+  function renderTVA(d: StatsData) {
+    const tbody = q('tvaTable');
+    tbody.innerHTML = '';
+
+    const caOnPlace   = (d.repartition_type.find(t => t.type === 'sur_place')?.ca ?? 0);
+    const caEmporter  = (d.repartition_type.find(t => t.type === 'emporter')?.ca ?? 0);
+    const caLivraison = (d.repartition_type.find(t => t.type === 'livraison')?.ca ?? 0);
+    const ca6         = caEmporter + caLivraison;
+
+    const rows = [
+      { label: 'Sur place',          taux: '12%', tva: d.tva.taux_12_sur_place, ca: caOnPlace },
+      { label: 'Emporter + Livraison', taux: '6%', tva: d.tva.taux_6_emporter,  ca: ca6 },
+    ];
+
+    rows.forEach(r => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${esc(r.label)}</td>
+        <td class="badge badge-ghost badge-sm">${esc(r.taux)}</td>
+        <td class="tabular-nums font-semibold">${fmt(r.tva)}</td>
+        <td class="tabular-nums">${fmt(r.ca - r.tva)}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    q('tvaTotalMontant').textContent = fmt(d.tva.total);
+    q('tvaTotalHT').textContent      = fmt(d.ca_total - d.tva.total);
+
+    // Panier par type
+    const panierEl = q('panierParType');
+    panierEl.innerHTML = '';
+    Object.entries(d.panier_par_type).forEach(([type, val]) => {
+      const row = document.createElement('div');
+      row.className = 'flex justify-between text-sm';
+      row.innerHTML = `
+        <span class="text-base-content/70">${esc(TYPE_LABELS[type] ?? type)}</span>
+        <span class="font-semibold tabular-nums">${fmt(val)}</span>
+      `;
+      panierEl.appendChild(row);
+    });
+  }
+
+  // ── Graphiques ────────────────────────────────
+  function destroyChart(id: string) {
+    if (charts[id]) { charts[id].destroy(); delete charts[id]; }
+  }
+
+  const COLORS = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#f97316','#84cc16','#ec4899','#6366f1'];
+
+  function renderChartCA(evolution: StatsData['evolution']) {
+    destroyChart('ca');
+    const ctx = (q<HTMLCanvasElement>('chartCA')).getContext('2d')!;
+
+    // Adapter les labels selon la durée
+    const labels = evolution.map(e => {
+      const d = new Date(e.date + 'T00:00:00');
+      return new Intl.DateTimeFormat('fr-BE', { day:'2-digit', month:'short' }).format(d);
+    });
+
+    charts['ca'] = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'CA (€)',
+            data: evolution.map(e => e.ca),
+            backgroundColor: 'rgba(59,130,246,0.7)',
+            borderColor: '#3b82f6',
+            borderWidth: 1,
+            borderRadius: 4,
+            yAxisID: 'y',
+          },
+          {
+            label: 'Commandes',
+            data: evolution.map(e => e.commandes),
+            type: 'line',
+            borderColor: '#10b981',
+            backgroundColor: 'rgba(16,185,129,0.1)',
+            borderWidth: 2,
+            pointRadius: 3,
+            fill: false,
+            yAxisID: 'y1',
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } },
+          tooltip: {
+            callbacks: {
+              label: (ctx: any) =>
+                ctx.datasetIndex === 0
+                  ? `CA : ${fmt(ctx.raw)}`
+                  : `Commandes : ${ctx.raw}`,
+            },
+          },
+        },
+        scales: {
+          y:  { type: 'linear', position: 'left',  ticks: { callback: (v: any) => `${v}€`, font: { size: 10 } }, grid: { color: 'rgba(0,0,0,0.05)' } },
+          y1: { type: 'linear', position: 'right', ticks: { font: { size: 10 } }, grid: { display: false } },
+          x:  { ticks: { font: { size: 10 }, maxRotation: 45 } },
+        },
+      },
+    });
+  }
+
+  function renderChartType(data: StatsData['repartition_type']) {
+    destroyChart('type');
+    const ctx = (q<HTMLCanvasElement>('chartType')).getContext('2d')!;
+    charts['type'] = new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: data.map(d => TYPE_LABELS[d.type] ?? d.type),
+        datasets: [{ data: data.map(d => d.count), backgroundColor: COLORS, borderWidth: 2 }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 11 } } } },
+      },
+    });
+
+    // Détails textuels
+    const el = q('typeDetails');
+    el.innerHTML = '';
+    data.forEach((d, i) => {
+      const row = document.createElement('div');
+      row.className = 'flex justify-between items-center';
+      row.innerHTML = `
+        <div class="flex items-center gap-1.5">
+          <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:${COLORS[i]}"></span>
+          <span>${esc(TYPE_LABELS[d.type] ?? d.type)}</span>
+        </div>
+        <div class="text-right">
+          <span class="font-semibold tabular-nums">${fmt(d.ca)}</span>
+          <span class="text-base-content/50 ml-1">(${d.count})</span>
+        </div>
+      `;
+      el.appendChild(row);
+    });
+  }
+
+  function renderChartPaiement(data: StatsData['repartition_paiement']) {
+    destroyChart('paiement');
+    const ctx = (q<HTMLCanvasElement>('chartPaiement')).getContext('2d')!;
+    charts['paiement'] = new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: data.map(d => MODE_LABELS[d.mode] ?? d.mode),
+        datasets: [{ data: data.map(d => d.count), backgroundColor: COLORS.slice(3), borderWidth: 2 }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 11 } } } },
+      },
+    });
+
+    const el = q('paiementDetails');
+    el.innerHTML = '';
+    data.forEach((d, i) => {
+      const row = document.createElement('div');
+      row.className = 'flex justify-between items-center';
+      row.innerHTML = `
+        <div class="flex items-center gap-1.5">
+          <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:${COLORS[i+3]}"></span>
+          <span>${esc(MODE_LABELS[d.mode] ?? d.mode)}</span>
+        </div>
+        <div class="text-right">
+          <span class="font-semibold tabular-nums">${fmt(d.ca)}</span>
+          <span class="text-base-content/50 ml-1">(${d.count})</span>
+        </div>
+      `;
+      el.appendChild(row);
+    });
+  }
+
+  function renderChartHeures(data: StatsData['heures_pointe']) {
+    destroyChart('heures');
+    const ctx = (q<HTMLCanvasElement>('chartHeures')).getContext('2d')!;
+    charts['heures'] = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: data.map(d => `${String(d.heure).padStart(2,'0')}h`),
+        datasets: [{
+          label: 'Commandes',
+          data: data.map(d => d.commandes),
+          backgroundColor: data.map(d => {
+            const max = Math.max(...data.map(x => x.commandes));
+            const ratio = max > 0 ? d.commandes / max : 0;
+            return `rgba(59,130,246,${0.2 + ratio * 0.8})`;
+          }),
+          borderRadius: 3,
+        }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { font: { size: 9 }, maxRotation: 0 } },
+          y: { ticks: { font: { size: 10 }, stepSize: 1 }, grid: { color: 'rgba(0,0,0,0.05)' } },
+        },
+      },
+    });
+  }
+
+  function renderChartTopProduits(data: StatsData['top_products']) {
+    destroyChart('topProduits');
+    const ctx = (q<HTMLCanvasElement>('chartTopProduits')).getContext('2d')!;
+    charts['topProduits'] = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: data.map(d => d.nom.length > 20 ? d.nom.slice(0, 18) + '…' : d.nom),
+        datasets: [
+          {
+            label: 'Quantité',
+            data: data.map(d => d.quantite),
+            backgroundColor: 'rgba(59,130,246,0.7)',
+            borderRadius: 4,
+            yAxisID: 'y',
+          },
+          {
+            label: 'CA (€)',
+            data: data.map(d => d.ca),
+            backgroundColor: 'rgba(16,185,129,0.7)',
+            borderRadius: 4,
+            yAxisID: 'y1',
+          },
+        ],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        indexAxis: 'y',
+        plugins: {
+          legend: { position: 'top', labels: { boxWidth: 10, font: { size: 11 } } },
+          tooltip: {
+            callbacks: {
+              label: (ctx: any) =>
+                ctx.datasetIndex === 0 ? `Qté : ${ctx.raw}` : `CA : ${fmt(ctx.raw)}`,
+            },
+          },
+        },
+        scales: {
+          y:  { ticks: { font: { size: 10 } } },
+          y1: { position: 'right', display: false },
+          x:  { ticks: { font: { size: 10 } }, grid: { color: 'rgba(0,0,0,0.05)' } },
+        },
+      },
+    });
+  }
+
+  // ── Export CSV ────────────────────────────────
+  q('btnExportCSV')?.addEventListener('click', async () => {
+    const btn = q<HTMLButtonElement>('btnExportCSV');
+    btn.disabled = true;
+    btn.textContent = 'Export…';
+
+    try {
+      const url = `${getApiBase()}/export/custom?start=${currentStart}&end=${currentEnd}`;
+      const res = await fetch(url, { headers: authH() });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `ventes_${currentStart}_${currentEnd}.csv`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      showToast('Export téléchargé', 'success');
+    } catch (err: unknown) {
+      showToast(`Erreur export : ${err instanceof Error ? err.message : ''}`, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg> Export CSV comptable`;
+    }
+  });
+
+  // ── Z de caisse print ─────────────────────────
+  q('btnPrintZCaisse')?.addEventListener('click', () => {
+    const el = q('zCaisseContent');
+    if (!el) return;
+    const win = window.open('', '_blank', 'width=400,height=500');
+    if (!win) return;
+    win.document.write(`
+      <!DOCTYPE html><html><head>
+      <title>Z de caisse</title>
+      <style>
+        body { font-family: monospace; font-size: 13px; padding: 20px; }
+        h1 { font-size: 16px; text-align: center; border-bottom: 1px solid #000; padding-bottom: 8px; }
+        .row { display: flex; justify-content: space-between; padding: 4px 0; }
+        .total { border-top: 1px solid #000; font-weight: bold; margin-top: 8px; padding-top: 8px; }
+      </style>
+      </head><body>
+      <h1>Z DE CAISSE</h1>
+      ${el.innerHTML}
+      <p style="text-align:center;margin-top:20px;font-size:11px;">Imprimé le ${new Date().toLocaleString('fr-BE')}</p>
+      </body></html>
+    `);
+    win.document.close();
+    win.print();
+  });
+
+  // ── Listeners ─────────────────────────────────
+  document.querySelectorAll<HTMLButtonElement>('[data-period]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      setPeriod(btn.dataset.period!);
+      void load();
+    });
+  });
+
+  q('btnApply')?.addEventListener('click', () => {
+    const s = (q<HTMLInputElement>('dateStart')).value;
+    const e = (q<HTMLInputElement>('dateEnd')).value;
+    if (!s || !e) { showToast('Sélectionnez une date de début et de fin', 'warning'); return; }
+    if (s > e)    { showToast('La date de début doit être avant la fin', 'warning'); return; }
+    currentStart = s;
+    currentEnd   = e;
+    document.querySelectorAll<HTMLButtonElement>('[data-period]').forEach(b => b.classList.remove('btn-active'));
+    void load();
+  });
+
+  // ── Init ──────────────────────────────────────
+  function init() {
+    setPeriod('week');
+    void load();
+  }
+
+  document.addEventListener('astro:page-load', init);
+  init();
+</script>

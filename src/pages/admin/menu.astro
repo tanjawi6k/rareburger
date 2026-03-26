@@ -81,6 +81,14 @@ const apiBaseUrl: string = import.meta.env.PUBLIC_API_URL ?? 'https://api.rarebu
           <label class="label"><span class="label-text">Suppléments</span></label>
           <div id="suppCheckboxes" class="flex flex-wrap gap-2"></div>
         </div>
+        <!-- Choices / Options obligatoires -->
+        <div class="form-control md:col-span-2">
+          <div class="flex items-center justify-between mb-2">
+            <label class="label-text font-medium">Choix obligatoires / optionnels</label>
+            <button type="button" class="btn btn-xs btn-ghost text-primary" id="addChoiceBtn">+ Ajouter un choix</button>
+          </div>
+          <div id="choicesList" class="space-y-3"></div>
+        </div>
         <div class="form-control md:col-span-2">
           <label class="label" for="prodRemovable"><span class="label-text">Ingrédients retirables (virgule)</span></label>
           <input id="prodRemovable" type="text" class="input input-bordered" placeholder="salade, tomate, oignon" />
@@ -170,10 +178,13 @@ const apiBaseUrl: string = import.meta.env.PUBLIC_API_URL ?? 'https://api.rarebu
   // ── Types ─────────────────────────────────────
   interface Category    { id: string; name: string; icon: string; }
   interface Supplement  { id: string; name: string; price: number; }
+  interface ChoiceOption { id: string; name: string; price_modifier: number; }
+  interface Choice { id: string; label: string; required: boolean; options: ChoiceOption[]; }
   interface Produit {
     id: string; nom: string; description?: string; prix: number;
     category?: string; images?: string[]; supplements?: string[];
     removable_ingredients?: string[]; allergenes?: string[];
+    choices?: Choice[];
     popular?: boolean; disponible: boolean;
   }
   interface MenuData {
@@ -185,6 +196,8 @@ const apiBaseUrl: string = import.meta.env.PUBLIC_API_URL ?? 'https://api.rarebu
   let currentCat  = '';
   let editId: string | null = null;
   let pendingDelFn: (() => Promise<void>) | null = null;
+  // Choices en cours d'édition
+  let editChoices: Choice[] = [];
 
   // ── Helpers ───────────────────────────────────
   function getApiBase() {
@@ -386,8 +399,101 @@ const apiBaseUrl: string = import.meta.env.PUBLIC_API_URL ?? 'https://api.rarebu
     });
   }
 
+  // ── Choices ──────────────────────────────────
+  function renderChoices() {
+    const wrap = q('choicesList');
+    wrap.innerHTML = '';
+    editChoices.forEach((ch, ci) => {
+      const card = document.createElement('div');
+      card.className = 'card bg-base-200 p-3 space-y-2';
+      card.innerHTML = `
+        <div class="flex gap-2 items-center">
+          <input type="text" class="input input-sm flex-1" placeholder="Label (ex: Choix de la viande)"
+            value="${esc(ch.label)}" data-choice-label="${ci}" />
+          <label class="flex items-center gap-1 text-xs cursor-pointer shrink-0">
+            <input type="checkbox" class="checkbox checkbox-xs" data-choice-required="${ci}"
+              ${ch.required ? 'checked' : ''} />
+            Obligatoire
+          </label>
+          <button type="button" class="btn btn-xs btn-ghost text-error" data-del-choice="${ci}">✕</button>
+        </div>
+        <div class="space-y-1.5" id="choiceOptions-${ci}"></div>
+        <button type="button" class="btn btn-xs btn-ghost text-primary" data-add-option="${ci}">+ Option</button>
+      `;
+      wrap.appendChild(card);
+
+      // Render options
+      const optWrap = document.getElementById(`choiceOptions-${ci}`)!;
+      ch.options.forEach((opt, oi) => {
+        const row = document.createElement('div');
+        row.className = 'flex gap-2 items-center';
+        row.innerHTML = `
+          <input type="text" class="input input-xs flex-1" placeholder="Nom option"
+            value="${esc(opt.name)}" data-opt-name="${ci}-${oi}" />
+          <input type="number" step="0.01" min="0" class="input input-xs w-24"
+            placeholder="+€" value="${opt.price_modifier || ''}"
+            data-opt-price="${ci}-${oi}" />
+          <button type="button" class="btn btn-xs btn-ghost text-error" data-del-option="${ci}-${oi}">✕</button>
+        `;
+        optWrap.appendChild(row);
+      });
+    });
+
+    // Listeners
+    wrap.querySelectorAll<HTMLInputElement>('[data-choice-label]').forEach(inp => {
+      inp.addEventListener('input', () => {
+        editChoices[parseInt(inp.dataset.choiceLabel!)]!.label = inp.value;
+      });
+    });
+    wrap.querySelectorAll<HTMLInputElement>('[data-choice-required]').forEach(cb => {
+      cb.addEventListener('change', () => {
+        editChoices[parseInt(cb.dataset.choiceRequired!)]!.required = cb.checked;
+      });
+    });
+    wrap.querySelectorAll<HTMLButtonElement>('[data-del-choice]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        editChoices.splice(parseInt(btn.dataset.delChoice!), 1);
+        renderChoices();
+      });
+    });
+    wrap.querySelectorAll<HTMLButtonElement>('[data-add-option]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const ci = parseInt(btn.dataset.addOption!);
+        editChoices[ci]!.options.push({ id: '', name: '', price_modifier: 0 });
+        renderChoices();
+      });
+    });
+    wrap.querySelectorAll<HTMLInputElement>('[data-opt-name]').forEach(inp => {
+      inp.addEventListener('input', () => {
+        const [ci, oi] = inp.dataset.optName!.split('-').map(Number);
+        const opt = editChoices[ci!]!.options[oi!]!;
+        opt.name = inp.value;
+        opt.id   = inp.value.toLowerCase().replace(/\s+/g, '_');
+      });
+    });
+    wrap.querySelectorAll<HTMLInputElement>('[data-opt-price]').forEach(inp => {
+      inp.addEventListener('input', () => {
+        const [ci, oi] = inp.dataset.optPrice!.split('-').map(Number);
+        editChoices[ci!]!.options[oi!]!.price_modifier = parseFloat(inp.value) || 0;
+      });
+    });
+    wrap.querySelectorAll<HTMLButtonElement>('[data-del-option]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const [ci, oi] = btn.dataset.delOption!.split('-').map(Number);
+        editChoices[ci!]!.options.splice(oi!, 1);
+        renderChoices();
+      });
+    });
+  }
+
+  q('addChoiceBtn')?.addEventListener('click', () => {
+    editChoices.push({ id: `choice_${Date.now()}`, label: '', required: true, options: [] });
+    renderChoices();
+  });
+
   function resetProductModal() {
     editId = null;
+    editChoices = [];
     q('productModalTitle').textContent = 'Ajouter un produit';
     (q<HTMLInputElement>('prodNom')).value        = '';
     (q<HTMLTextAreaElement>('prodDesc')).value    = '';
@@ -398,6 +504,7 @@ const apiBaseUrl: string = import.meta.env.PUBLIC_API_URL ?? 'https://api.rarebu
     (q<HTMLInputElement>('prodDisponible')).checked = true;
     (q<HTMLInputElement>('prodImages')).value     = '';
     q('imagePreview').innerHTML                   = '';
+    q('choicesList').innerHTML                    = '';
     renderSuppCheckboxes();
   }
 
@@ -427,6 +534,9 @@ const apiBaseUrl: string = import.meta.env.PUBLIC_API_URL ?? 'https://api.rarebu
     });
 
     renderSuppCheckboxes(p.supplements ?? []);
+    // Charger les choices existants
+    editChoices = JSON.parse(JSON.stringify(p.choices ?? []));
+    renderChoices();
     (q('productModal') as HTMLDialogElement).showModal();
   }
 
@@ -478,6 +588,9 @@ const apiBaseUrl: string = import.meta.env.PUBLIC_API_URL ?? 'https://api.rarebu
         document.querySelectorAll<HTMLInputElement>('input[name="supplement"]:checked')
       ).map(cb => cb.value);
 
+      // Valider choices : chaque choice doit avoir un label et au moins une option
+      const validChoices = editChoices.filter(ch => ch.label.trim() && ch.options.length > 0);
+
       const payload: Partial<Produit> = {
         nom,
         description: (q<HTMLTextAreaElement>('prodDesc')).value,
@@ -485,6 +598,7 @@ const apiBaseUrl: string = import.meta.env.PUBLIC_API_URL ?? 'https://api.rarebu
         category:   (q<HTMLSelectElement>('prodCat')).value,
         images:     newImages.length ? newImages : existing,
         supplements,
+        choices:    validChoices.length ? validChoices : undefined,
         removable_ingredients: (q<HTMLInputElement>('prodRemovable')).value
           .split(',').map(s => s.trim()).filter(Boolean),
         allergenes: (q<HTMLInputElement>('prodAllergenes')).value
