@@ -30,6 +30,12 @@ const apiBaseUrl: string = import.meta.env.PUBLIC_API_URL ?? 'https://api.rarebu
         </svg>
         Z de caisse
       </button>
+      <button id="btnExportClients" class="btn btn-outline gap-2">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
+        </svg>
+        Export clients
+      </button>
     </div>
   </div>
 
@@ -87,9 +93,14 @@ const apiBaseUrl: string = import.meta.env.PUBLIC_API_URL ?? 'https://api.rarebu
         <div class="stat-desc">par commande</div>
       </div>
       <div class="stat">
+        <div class="stat-title">Frais livraison</div>
+        <div class="stat-value text-info tabular-nums" id="kpiFrais">—</div>
+        <div class="stat-desc">non inclus dans CA</div>
+      </div>
+      <div class="stat">
         <div class="stat-title">TVA collectée</div>
         <div class="stat-value text-warning tabular-nums" id="kpiTVA">—</div>
-        <div class="stat-desc">6% + 12%</div>
+        <div class="stat-desc">6% + 12% (hors frais livraison)</div>
       </div>
     </div>
 
@@ -105,10 +116,13 @@ const apiBaseUrl: string = import.meta.env.PUBLIC_API_URL ?? 'https://api.rarebu
         </div>
       </div>
 
-      <!-- Z de caisse aujourd'hui -->
+      <!-- Z de caisse avec sélecteur de date -->
       <div class="card bg-base-100 shadow-sm">
         <div class="card-body gap-3">
-          <h2 class="card-title text-base">Z de caisse — aujourd'hui</h2>
+          <div class="flex justify-between items-center flex-wrap gap-2">
+            <h2 class="card-title text-base">Z de caisse</h2>
+            <input type="date" id="zCaisseDate" class="input input-xs input-bordered" />
+          </div>
           <div id="zCaisseContent" class="space-y-2 text-sm"></div>
         </div>
       </div>
@@ -149,6 +163,19 @@ const apiBaseUrl: string = import.meta.env.PUBLIC_API_URL ?? 'https://api.rarebu
         </div>
       </div>
 
+    </div>
+
+    <!-- Livraisons par code postal -->
+    <div class="card bg-base-100 shadow-sm">
+      <div class="card-body">
+        <h2 class="card-title text-base">Livraisons par code postal <span class="text-xs font-normal text-base-content/50">(30 derniers jours)</span></h2>
+        <div id="cpContent" class="overflow-x-auto">
+          <table class="table table-sm table-zebra">
+            <thead><tr><th>Code postal</th><th>Ville</th><th class="text-center">Commandes</th><th class="text-right">CA livraisons</th></tr></thead>
+            <tbody id="cpTable"></tbody>
+          </table>
+        </div>
+      </div>
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -321,6 +348,7 @@ const apiBaseUrl: string = import.meta.env.PUBLIC_API_URL ?? 'https://api.rarebu
       renderKPIs(data);
       renderZCaisse(data.z_caisse);
       renderTVA(data);
+      void loadCodesPostaux();
 
       // Chart already imported above
       renderChartCA(data.evolution);
@@ -340,27 +368,26 @@ const apiBaseUrl: string = import.meta.env.PUBLIC_API_URL ?? 'https://api.rarebu
 
   // ── KPIs ──────────────────────────────────────
   function renderKPIs(d: StatsData) {
-    q('kpiCA').textContent     = fmt(d.ca_total);
-    q('kpiNb').textContent     = String(d.nb_commandes);
-    q('kpiPanier').textContent = fmt(d.panier_moyen);
-    q('kpiTVA').textContent    = fmt(d.tva.total);
+    q('kpiCA').textContent      = fmt(d.ca_total);        // sous-total hors frais
+    q('kpiNb').textContent      = String(d.nb_commandes);
+    q('kpiPanier').textContent  = fmt(d.panier_moyen);
+    q('kpiFrais').textContent   = fmt((d as any).ca_frais_livraison ?? 0);
+    q('kpiTVA').textContent     = fmt(d.tva.total);
     q('kpiPeriode').textContent = `${d.periode.start} → ${d.periode.end}`;
   }
 
   // ── Z de caisse ───────────────────────────────
-  function renderZCaisse(z: StatsData['z_caisse']) {
+  function renderZCaisse(z: any) {
     const el = q('zCaisseContent');
     el.innerHTML = '';
 
     const header = document.createElement('div');
     header.className = 'flex justify-between items-center pb-2 border-b border-base-200';
-    header.innerHTML = `
-      <span class="font-semibold">${esc(z.date)}</span>
-      <span class="badge badge-primary">${z.nb_commandes} commandes</span>
-    `;
+    header.innerHTML = `<span class="font-semibold">${esc(z.date)}</span><span class="badge badge-primary">${z.nb_commandes} commandes</span>`;
     el.appendChild(header);
 
-    Object.entries(z.par_mode).forEach(([mode, v]) => {
+    // Par mode de paiement
+    Object.entries(z.par_mode ?? {}).forEach(([mode, v]: [string, any]) => {
       const row = document.createElement('div');
       row.className = 'flex justify-between items-center';
       row.innerHTML = `
@@ -368,19 +395,38 @@ const apiBaseUrl: string = import.meta.env.PUBLIC_API_URL ?? 'https://api.rarebu
         <div class="text-right">
           <p class="font-semibold tabular-nums">${fmt(v.ca)}</p>
           <p class="text-xs text-base-content/50">${v.count} cmd</p>
-        </div>
-      `;
+        </div>`;
       el.appendChild(row);
     });
+
+    // Frais livraison séparés
+    if ((z.frais_livraison ?? 0) > 0) {
+      const fraisRow = document.createElement('div');
+      fraisRow.className = 'flex justify-between items-center text-base-content/60';
+      fraisRow.innerHTML = `<span>Frais livraison</span><span class="tabular-nums">${fmt(z.frais_livraison)}</span>`;
+      el.appendChild(fraisRow);
+    }
 
     const total = document.createElement('div');
     total.className = 'flex justify-between items-center border-t border-base-200 pt-2 font-bold';
     total.innerHTML = `
-      <span>Total journée</span>
-      <span class="text-primary tabular-nums">${fmt(z.ca_total)}</span>
-    `;
+      <span>CA ventes</span>
+      <span class="text-primary tabular-nums">${fmt(z.ca_ventes ?? z.ca_total ?? 0)}</span>`;
     el.appendChild(total);
   }
+
+  // ── Charger Z de caisse par date ──────────────
+  async function loadZCaisse(date: string) {
+    try {
+      const z = await apiFetch<any>(`/stats/z-caisse?date=${date}`, { headers: authH() });
+      renderZCaisse(z);
+    } catch {}
+  }
+
+  q('zCaisseDate')?.addEventListener('change', (e) => {
+    const val = (e.target as HTMLInputElement).value;
+    if (val) loadZCaisse(val);
+  });
 
   // ── TVA ───────────────────────────────────────
   function renderTVA(d: StatsData) {
@@ -423,6 +469,53 @@ const apiBaseUrl: string = import.meta.env.PUBLIC_API_URL ?? 'https://api.rarebu
       `;
       panierEl.appendChild(row);
     });
+  }
+
+  // ── Codes postaux ────────────────────────────
+  async function loadCodesPostaux() {
+    const end30   = isoDate(new Date());
+    const start30 = isoDate(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
+    try {
+      const res  = await fetch(
+        `${getApiBase()}/stats/codes-postaux?start=${start30}&end=${end30}`,
+        { headers: authH() }
+      );
+      const data = await res.json() as { codes_postaux: any[] };
+      const tbody = document.getElementById('cpTable');
+      if (!tbody) return;
+      tbody.innerHTML = '';
+      const list = data.codes_postaux ?? [];
+      if (!list.length) {
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center text-base-content/50 py-4">Aucune livraison sur la période</td></tr>';
+        return;
+      }
+      const max = list[0].count || 1;
+      list.forEach((row: any) => {
+        const tr      = document.createElement('tr');
+        const pct     = Math.round((row.count / max) * 100);
+        const cpCell  = document.createElement('td');
+        cpCell.className = 'font-mono font-semibold';
+        cpCell.textContent = String(row.code_postal ?? '');
+        const villeCell = document.createElement('td');
+        villeCell.textContent = String(row.ville || '—');
+        const cntCell = document.createElement('td');
+        const bar = document.createElement('div');
+        bar.className = 'flex items-center gap-2';
+        bar.innerHTML = `<div class="flex-1 bg-base-300 rounded-full h-2"><div class="bg-primary h-2 rounded-full" style="width:${pct}%"></div></div><span class="tabular-nums text-sm font-bold w-8 text-right">${row.count}</span>`;
+        cntCell.appendChild(bar);
+        const caCell  = document.createElement('td');
+        caCell.className = 'text-right tabular-nums font-semibold';
+        caCell.textContent = fmt(row.ca);
+        tr.appendChild(cpCell);
+        tr.appendChild(villeCell);
+        tr.appendChild(cntCell);
+        tr.appendChild(caCell);
+        tbody.appendChild(tr);
+      });
+    } catch (err) {
+      const tbody = document.getElementById('cpTable');
+      if (tbody) tbody.innerHTML = `<tr><td colspan="4" class="text-error text-sm py-2">Erreur chargement</td></tr>`;
+    }
   }
 
   // ── Graphiques ────────────────────────────────
@@ -661,6 +754,30 @@ const apiBaseUrl: string = import.meta.env.PUBLIC_API_URL ?? 'https://api.rarebu
     }
   });
 
+  // ── Export clients ───────────────────────────
+  q('btnExportClients')?.addEventListener('click', async () => {
+    const btn = q<HTMLButtonElement>('btnExportClients');
+    btn.disabled = true;
+    btn.textContent = 'Export…';
+    try {
+      const url = `${getApiBase()}/export/clients?start=${currentStart}&end=${currentEnd}`;
+      const res = await fetch(url, { headers: authH() });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `clients_${currentStart}_${currentEnd}.csv`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      showToast('Export clients téléchargé', 'success');
+    } catch (err: unknown) {
+      showToast(`Erreur : ${err instanceof Error ? err.message : ''}`, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg> Export clients`;
+    }
+  });
+
   // ── Z de caisse print ─────────────────────────
   q('btnPrintZCaisse')?.addEventListener('click', () => {
     const el = q('zCaisseContent');
@@ -709,6 +826,9 @@ const apiBaseUrl: string = import.meta.env.PUBLIC_API_URL ?? 'https://api.rarebu
   function init() {
     setPeriod('week');
     void load();
+    // Init date Z de caisse = aujourd'hui
+    const todayStr = isoDate(new Date());
+    (q<HTMLInputElement>('zCaisseDate')).value = todayStr;
   }
 
   document.addEventListener('astro:page-load', init);
